@@ -1,4 +1,5 @@
 from datetime import date, timedelta
+from typing import Optional
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session, joinedload
@@ -11,6 +12,22 @@ from app.models.nutrition_log import NutritionLog
 from app.models.user import User
 from app.models.weight_log import WeightLog
 from app.models.workout import Workout
+
+
+def _least_squares(points: list[tuple[float, float]]) -> tuple[Optional[float], Optional[float]]:
+    n = len(points)
+    if n < 2:
+        return None, None
+    xs = [p[0] for p in points]
+    ys = [p[1] for p in points]
+    mx = sum(xs) / n
+    my = sum(ys) / n
+    num = sum((xs[i] - mx) * (ys[i] - my) for i in range(n))
+    den = sum((xs[i] - mx) ** 2 for i in range(n))
+    if den == 0:
+        return 0.0, my
+    slope = num / den
+    return slope, my - slope * mx
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
 
@@ -350,3 +367,276 @@ def consistency_score(
 
     score = min(100, round((len(active_dates) / days) * 100))
     return {"score": score, "active_days": len(active_dates), "period_days": days}
+
+
+@router.get("/intelligence")
+def intelligence(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    today = date.today()
+    cutoff_7 = today - timedelta(days=7)
+    cutoff_14 = today - timedelta(days=14)
+    cutoff_21 = today - timedelta(days=21)
+    cutoff_30 = today - timedelta(days=30)
+    cutoff_60 = today - timedelta(days=60)
+
+    all_weight = (
+        db.query(WeightLog)
+        .filter(WeightLog.user_id == current_user.id)
+        .order_by(WeightLog.logged_at.asc())
+        .all()
+    )
+    all_fat = (
+        db.query(BodyFatLog)
+        .filter(BodyFatLog.user_id == current_user.id)
+        .order_by(BodyFatLog.logged_at.asc())
+        .all()
+    )
+    active_goal = (
+        db.query(Goal)
+        .filter(Goal.user_id == current_user.id, Goal.is_active == True)  # noqa: E712
+        .first()
+    )
+
+    # ── TRENDS ──────────────────────────────────────────────────────────────
+    def _avg(vals: list[float]) -> Optional[float]:
+        return sum(vals) / len(vals) if vals else None
+
+    w_last7 = [w.weight_kg for w in all_weight if w.logged_at.date() >= cutoff_7]
+    w_prev7 = [w.weight_kg for w in all_weight if cutoff_14 <= w.logged_at.date() < cutoff_7]
+    w_last30 = [w.weight_kg for w in all_weight if w.logged_at.date() >= cutoff_30]
+    w_prev30 = [w.weight_kg for w in all_weight if cutoff_60 <= w.logged_at.date() < cutoff_30]
+
+    weekly_weight_change: Optional[float] = None
+    if w_last7 and w_prev7:
+        weekly_weight_change = round(_avg(w_last7) - _avg(w_prev7), 2)  # type: ignore[arg-type]
+
+    monthly_weight_change: Optional[float] = None
+    if w_last30 and w_prev30:
+        monthly_weight_change = round(_avg(w_last30) - _avg(w_prev30), 2)  # type: ignore[arg-type]
+
+    f_last30 = [f.body_fat_pct for f in all_fat if f.logged_at.date() >= cutoff_30]
+    f_prev30 = [f.body_fat_pct for f in all_fat if cutoff_60 <= f.logged_at.date() < cutoff_30]
+    monthly_fat_change: Optional[float] = None
+    if f_last30 and f_prev30:
+        monthly_fat_change = round(_avg(f_last30) - _avg(f_prev30), 2)  # type: ignore[arg-type]
+
+    # ── PLATEAU DETECTION ────────────────────────────────────────────────────
+    p14 = [w.weight_kg for w in all_weight if w.logged_at.date() >= cutoff_14]
+    p21 = [w.weight_kg for w in all_weight if w.logged_at.date() >= cutoff_21]
+
+    plateau_detected = False
+    plateau_severity: Optional[str] = None
+    plateau_days: Optional[int] = None
+    plateau_range: Optional[float] = None
+
+    if len(p14) >= 3:
+        r = round(max(p14) - min(p14), 2)
+        if r < 0.5:
+            plateau_detected, plateau_severity, plateau_days, plateau_range = True, "major", 14, r
+    if not plateau_detected and len(p21) >= 3:
+        r = round(max(p21) - min(p21), 2)
+        if r < 1.0:
+            plateau_detected, plateau_severity, plateau_days, plateau_range = True, "minor", 21, r
+
+    # ── HEALTH SCORE (4 × 25) ───────────────────────────────────────────────
+    weight_log_days = {w.logged_at.date() for w in all_weight if w.logged_at.date() >= cutoff_14}
+    weight_consistency = min(25, round(len(weight_log_days) / 14 * 25))
+
+    nutrition_days = {
+        d
+        for (d,) in db.query(NutritionLog.logged_date)
+        .filter(NutritionLog.user_id == current_user.id, NutritionLog.logged_date >= cutoff_14)
+        .all()
+    }
+    nutrition_consistency = min(25, round(len(nutrition_days) / 14 * 25))
+
+    workout_days_14: set[date] = set()
+    for (d,) in db.query(Workout.logged_at).filter(
+        Workout.user_id == current_user.id, Workout.logged_at >= cutoff_14
+    ).all():
+        workout_days_14.add(d.date() if hasattr(d, "date") else d)
+    # Target: 3/week → 6 sessions in 14 days
+    workout_consistency = min(25, round(len(workout_days_14) / 6 * 25))
+
+    # ── FORECAST ────────────────────────────────────────────────────────────
+    progress_pct_val: Optional[float] = None
+    eta_date: Optional[str] = None
+    days_ahead: Optional[int] = None
+    required_weekly_change: Optional[float] = None
+    goal_progress_score = 0
+
+    if active_goal and all_weight:
+        latest_w = all_weight[-1].weight_kg
+        start_w = active_goal.start_weight_kg or all_weight[0].weight_kg
+
+        if active_goal.target_weight_kg and start_w and (active_goal.target_weight_kg - start_w) != 0:
+            total_needed = active_goal.target_weight_kg - start_w
+            current_change = latest_w - start_w
+            progress_pct_val = round(min(100, max(0, (current_change / total_needed) * 100)), 1)
+            goal_progress_score = min(25, round(progress_pct_val / 100 * 25))
+
+            remaining = active_goal.target_weight_kg - latest_w
+
+            # ETA via current weekly rate
+            if weekly_weight_change and weekly_weight_change != 0:
+                weeks_needed = remaining / weekly_weight_change
+                if weeks_needed > 0:
+                    eta_date = (today + timedelta(weeks=weeks_needed)).isoformat()
+
+            # Days ahead/behind vs target_date
+            if eta_date and active_goal.target_date:
+                target_d = active_goal.target_date.date()
+                eta_d = date.fromisoformat(eta_date)
+                days_ahead = (target_d - eta_d).days  # positive = ahead
+
+            # Required weekly change to hit target on time
+            if active_goal.target_date:
+                days_left = (active_goal.target_date.date() - today).days
+                if days_left > 0:
+                    required_weekly_change = round(remaining / (days_left / 7), 2)
+
+    total_health_score = weight_consistency + nutrition_consistency + workout_consistency + goal_progress_score
+
+    # ── SMART INSIGHTS ───────────────────────────────────────────────────────
+    insights: list[str] = []
+    if not all_weight:
+        insights.append("insight_no_data")
+    else:
+        if plateau_detected:
+            insights.append("insight_plateau_detected")
+
+        if progress_pct_val is not None:
+            if progress_pct_val >= 100:
+                insights.append("insight_goal_reached")
+            elif progress_pct_val >= 75:
+                insights.append("insight_close_to_goal")
+
+        if days_ahead is not None:
+            if days_ahead >= 7:
+                insights.append("insight_ahead_schedule")
+            elif days_ahead <= -7:
+                insights.append("insight_behind_schedule")
+            else:
+                insights.append("insight_on_track")
+
+        if total_health_score >= 75:
+            insights.append("insight_excellent_consistency")
+        elif total_health_score >= 50:
+            insights.append("insight_good_consistency")
+        elif total_health_score < 30:
+            insights.append("insight_poor_consistency")
+
+    return {
+        "forecast": {
+            "progress_pct": progress_pct_val,
+            "eta_date": eta_date,
+            "days_ahead": days_ahead,
+            "required_weekly_change_kg": required_weekly_change,
+            "weekly_change_kg": weekly_weight_change,
+            "monthly_change_kg": monthly_weight_change,
+            "monthly_fat_change_pct": monthly_fat_change,
+        },
+        "health_score": {
+            "total": total_health_score,
+            "weight_consistency": weight_consistency,
+            "nutrition_consistency": nutrition_consistency,
+            "workout_consistency": workout_consistency,
+            "goal_progress": goal_progress_score,
+        },
+        "plateau": {
+            "detected": plateau_detected,
+            "severity": plateau_severity,
+            "days_checked": plateau_days,
+            "weight_range_kg": plateau_range,
+        },
+        "trends": {
+            "weekly_weight_change_kg": weekly_weight_change,
+            "monthly_weight_change_kg": monthly_weight_change,
+            "monthly_fat_change_pct": monthly_fat_change,
+        },
+        "insights": insights,
+    }
+
+
+@router.get("/projection")
+def weight_projection(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    today = date.today()
+
+    all_weight = (
+        db.query(WeightLog)
+        .filter(WeightLog.user_id == current_user.id)
+        .order_by(WeightLog.logged_at.asc())
+        .all()
+    )
+    if not all_weight:
+        return []
+
+    active_goal = (
+        db.query(Goal)
+        .filter(Goal.user_id == current_user.id, Goal.is_active == True)  # noqa: E712
+        .first()
+    )
+
+    # Date range
+    chart_start = max(all_weight[0].logged_at.date(), today - timedelta(days=90))
+    if active_goal and active_goal.target_date:
+        chart_end = max(active_goal.target_date.date(), today + timedelta(days=30))
+    else:
+        chart_end = today + timedelta(days=90)
+    # Cap total range at 180 days for readability
+    if (chart_end - chart_start).days > 180:
+        chart_end = chart_start + timedelta(days=180)
+
+    # Actual weights by date
+    actual_by_date: dict[date, float] = {}
+    for w in all_weight:
+        actual_by_date[w.logged_at.date()] = w.weight_kg
+
+    # Linear regression on last 30 days
+    cutoff_30 = today - timedelta(days=30)
+    reg_points = [
+        (float(w.logged_at.date().toordinal()), w.weight_kg)
+        for w in all_weight
+        if w.logged_at.date() >= cutoff_30
+    ]
+    slope, intercept = _least_squares(reg_points)
+
+    # Target path parameters
+    t_start_w: Optional[float] = None
+    t_end_w: Optional[float] = None
+    t_start_d: Optional[date] = None
+    t_end_d: Optional[date] = None
+
+    if active_goal and active_goal.start_weight_kg and active_goal.target_weight_kg and active_goal.target_date:
+        t_start_w = active_goal.start_weight_kg
+        t_end_w = active_goal.target_weight_kg
+        t_start_d = active_goal.created_at.date()
+        t_end_d = active_goal.target_date.date()
+
+    result = []
+    cur = chart_start
+    while cur <= chart_end:
+        actual = actual_by_date.get(cur)
+
+        projected: Optional[float] = None
+        if slope is not None and intercept is not None and cur >= today - timedelta(days=3):
+            proj = slope * cur.toordinal() + intercept
+            projected = round(max(0, proj), 2)
+
+        target: Optional[float] = None
+        if t_start_d and t_end_d and t_start_w is not None and t_end_w is not None:
+            total_days = (t_end_d - t_start_d).days
+            if total_days > 0:
+                frac = max(0.0, min(1.0, (cur - t_start_d).days / total_days))
+                target = round(t_start_w + (t_end_w - t_start_w) * frac, 2)
+
+        if actual is not None or projected is not None or target is not None:
+            result.append({
+                "date": cur.isoformat(),
+                "actual_weight": actual,
+                "projected_weight": projected,
+                "target_weight": target,
+            })
+
+        cur += timedelta(days=1)
+
+    return result

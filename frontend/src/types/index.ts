@@ -98,3 +98,47 @@ export interface TrendPoint {
   date: string;
   value: number | null;
 }
+
+export interface IntelligenceForecast {
+  progress_pct: number | null;
+  eta_date: string | null;
+  days_ahead: number | null;
+  required_weekly_change_kg: number | null;
+  weekly_change_kg: number | null;
+  monthly_change_kg: number | null;
+  monthly_fat_change_pct: number | null;
+}
+
+export interface IntelligenceHealthScore {
+  total: number;
+  weight_consistency: number;
+  nutrition_consistency: number;
+  workout_consistency: number;
+  goal_progress: number;
+}
+
+export interface IntelligencePlateau {
+  detected: boolean;
+  severity: "major" | "minor" | null;
+  days_checked: number | null;
+  weight_range_kg: number | null;
+}
+
+export interface Intelligence {
+  forecast: IntelligenceForecast;
+  health_score: IntelligenceHealthScore;
+  plateau: IntelligencePlateau;
+  trends: {
+    weekly_weight_change_kg: number | null;
+    monthly_weight_change_kg: number | null;
+    monthly_fat_change_pct: number | null;
+  };
+  insights: string[];
+}
+
+export interface ProjectionPoint {
+  date: string;
+  actual_weight: number | null;
+  projected_weight: number | null;
+  target_weight: number | null;
+}

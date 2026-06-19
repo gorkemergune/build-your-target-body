@@ -7,10 +7,29 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { TrendChart } from "@/components/charts/TrendChart";
+import { ProjectionChart } from "@/components/charts/ProjectionChart";
 import { api } from "@/lib/api";
 import { formatNumber, formatChange, formatDate } from "@/lib/utils";
-import type { GoalProgress } from "@/types";
-import { Scale, Percent, Calendar, Flame, Target, Dumbbell, Ruler, Beef, Trophy } from "lucide-react";
+import type { GoalProgress, Intelligence, ProjectionPoint } from "@/types";
+import {
+  Scale,
+  Percent,
+  Calendar,
+  Flame,
+  Target,
+  Dumbbell,
+  Ruler,
+  Beef,
+  Trophy,
+  AlertTriangle,
+  TrendingUp,
+  TrendingDown,
+  Minus,
+  CheckCircle2,
+  Clock,
+  Activity,
+  Heart,
+} from "lucide-react";
 import Link from "next/link";
 
 interface DashboardData {
@@ -36,10 +55,32 @@ interface DashboardData {
   } | null;
 }
 
+const INSIGHT_COLORS: Record<string, string> = {
+  insight_no_data: "bg-muted text-muted-foreground",
+  insight_plateau_detected: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300",
+  insight_goal_reached: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300",
+  insight_close_to_goal: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300",
+  insight_ahead_schedule: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300",
+  insight_behind_schedule: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300",
+  insight_on_track: "bg-sky-100 text-sky-800 dark:bg-sky-900/30 dark:text-sky-300",
+  insight_excellent_consistency: "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300",
+  insight_good_consistency: "bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300",
+  insight_poor_consistency: "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300",
+};
+
+function TrendIcon({ value }: { value: number | null }) {
+  if (value == null) return <Minus className="h-3.5 w-3.5 text-muted-foreground" />;
+  if (value > 0.1) return <TrendingUp className="h-3.5 w-3.5 text-red-500" />;
+  if (value < -0.1) return <TrendingDown className="h-3.5 w-3.5 text-green-500" />;
+  return <Minus className="h-3.5 w-3.5 text-muted-foreground" />;
+}
+
 export default function DashboardPage({ params: { locale } }: { params: { locale: string } }) {
   const t = useTranslations("dashboard");
   const [data, setData] = useState<DashboardData | null>(null);
   const [progress, setProgress] = useState<GoalProgress | null>(null);
+  const [intel, setIntel] = useState<Intelligence | null>(null);
+  const [projection, setProjection] = useState<ProjectionPoint[]>([]);
   const [weightTrend, setWeightTrend] = useState<{ date: string; value: number }[]>([]);
   const [fatTrend, setFatTrend] = useState<{ date: string; value: number }[]>([]);
   const [loading, setLoading] = useState(true);
@@ -48,12 +89,16 @@ export default function DashboardPage({ params: { locale } }: { params: { locale
     Promise.all([
       api.get("/api/v1/analytics/dashboard"),
       api.get("/api/v1/analytics/goal-progress"),
+      api.get("/api/v1/analytics/intelligence"),
+      api.get("/api/v1/analytics/projection"),
       api.get("/api/v1/analytics/weight-trend?days=30"),
       api.get("/api/v1/analytics/fat-trend?days=30"),
     ])
-      .then(([dash, prog, wt, ft]) => {
+      .then(([dash, prog, int_, proj, wt, ft]) => {
         setData(dash.data);
         setProgress(prog.data);
+        setIntel(int_.data);
+        setProjection(proj.data);
         setWeightTrend(wt.data);
         setFatTrend(ft.data);
       })
@@ -70,17 +115,20 @@ export default function DashboardPage({ params: { locale } }: { params: { locale
     );
   }
 
-  const goalTypeLabel =
-    progress?.goal_type
-      ? progress.goal_type.replace("_", " ").replace(/\b\w/g, (c) => c.toUpperCase())
-      : null;
+  const goalTypeLabel = progress?.goal_type
+    ? progress.goal_type.replace("_", " ").replace(/\b\w/g, (c) => c.toUpperCase())
+    : null;
+
+  const hs = intel?.health_score;
+  const forecast = intel?.forecast;
+  const plateau = intel?.plateau;
 
   return (
     <AppLayout locale={locale}>
       <div className="space-y-6">
         <h1 className="text-3xl font-bold">{t("title")}</h1>
 
-        {/* Stat Cards — Row 1 */}
+        {/* ── Stat Cards Row 1 ── */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <StatCard
             icon={<Scale className="h-5 w-5 text-blue-500" />}
@@ -104,7 +152,7 @@ export default function DashboardPage({ params: { locale } }: { params: { locale
           />
         </div>
 
-        {/* Stat Cards — Row 2 */}
+        {/* ── Stat Cards Row 2 ── */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <StatCard
             icon={<Calendar className="h-5 w-5 text-purple-500" />}
@@ -128,7 +176,178 @@ export default function DashboardPage({ params: { locale } }: { params: { locale
           />
         </div>
 
-        {/* Goal Progress Engine */}
+        {/* ── Plateau Warning ── */}
+        {plateau?.detected && (
+          <Card className="border-yellow-300 bg-yellow-50 dark:bg-yellow-900/20 dark:border-yellow-700">
+            <CardContent className="pt-4 pb-4 flex items-start gap-3">
+              <AlertTriangle className="h-5 w-5 text-yellow-600 dark:text-yellow-400 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-semibold text-yellow-800 dark:text-yellow-300 text-sm">
+                  {t("plateauWarning")}
+                </p>
+                <p className="text-xs text-yellow-700 dark:text-yellow-400 mt-0.5">
+                  {t("plateauDesc", {
+                    days: plateau.days_checked ?? 0,
+                    range: plateau.weight_range_kg ?? 0,
+                  })}
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* ── Smart Insights ── */}
+        {(intel?.insights?.length ?? 0) > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {intel!.insights.map((key) => (
+              <span
+                key={key}
+                className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-medium ${
+                  INSIGHT_COLORS[key] ?? "bg-muted text-muted-foreground"
+                }`}
+              >
+                {t(key as any)}
+              </span>
+            ))}
+          </div>
+        )}
+
+        {/* ── Health Score + Forecast ── */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Health Score */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Heart className="h-4 w-4 text-rose-500" />
+                {t("healthScoreLabel")}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {hs ? (
+                <>
+                  <div className="flex items-center gap-4">
+                    <div className="text-5xl font-bold text-primary">{hs.total}</div>
+                    <div className="flex-1">
+                      <Progress value={hs.total} />
+                      <p className="text-xs text-muted-foreground mt-1">{t("outOf100")}</p>
+                    </div>
+                  </div>
+                  <div className="space-y-2.5">
+                    {([
+                      { label: t("weightTracking"), val: hs.weight_consistency, max: 25 },
+                      { label: t("nutritionTracking"), val: hs.nutrition_consistency, max: 25 },
+                      { label: t("workoutTracking"), val: hs.workout_consistency, max: 25 },
+                      { label: t("goalProgressScore"), val: hs.goal_progress, max: 25 },
+                    ] as const).map(({ label, val, max }) => (
+                      <div key={label}>
+                        <div className="flex justify-between text-xs mb-1">
+                          <span className="text-muted-foreground">{label}</span>
+                          <span className="font-medium">{val}/{max}</span>
+                        </div>
+                        <Progress value={(val / max) * 100} className="h-1.5" />
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <p className="text-sm text-muted-foreground text-center py-4">—</p>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Forecast */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Activity className="h-4 w-4 text-blue-500" />
+                {t("forecastCard")}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {forecast ? (
+                <div className="grid grid-cols-2 gap-3">
+                  <ForecastStat
+                    label={t("etaDate")}
+                    value={forecast.eta_date ? formatDate(forecast.eta_date, locale) : "—"}
+                    icon={<Clock className="h-3.5 w-3.5 text-purple-500" />}
+                  />
+                  <ForecastStat
+                    label={t("scheduleStatus")}
+                    value={
+                      forecast.days_ahead == null
+                        ? "—"
+                        : forecast.days_ahead >= 7
+                        ? `+${forecast.days_ahead}d`
+                        : forecast.days_ahead <= -7
+                        ? `${forecast.days_ahead}d`
+                        : t("onSchedule")
+                    }
+                    valueClass={
+                      forecast.days_ahead == null
+                        ? ""
+                        : forecast.days_ahead >= 7
+                        ? "text-green-600"
+                        : forecast.days_ahead <= -7
+                        ? "text-red-500"
+                        : "text-sky-600"
+                    }
+                    icon={
+                      forecast.days_ahead == null ? (
+                        <Minus className="h-3.5 w-3.5 text-muted-foreground" />
+                      ) : forecast.days_ahead >= 7 ? (
+                        <TrendingUp className="h-3.5 w-3.5 text-green-500" />
+                      ) : forecast.days_ahead <= -7 ? (
+                        <TrendingDown className="h-3.5 w-3.5 text-red-500" />
+                      ) : (
+                        <CheckCircle2 className="h-3.5 w-3.5 text-sky-500" />
+                      )
+                    }
+                  />
+                  <ForecastStat
+                    label={t("weeklyChange")}
+                    value={
+                      forecast.weekly_change_kg != null
+                        ? formatChange(forecast.weekly_change_kg, " kg")
+                        : "—"
+                    }
+                    icon={<TrendIcon value={forecast.weekly_change_kg} />}
+                  />
+                  <ForecastStat
+                    label={t("monthlyChange")}
+                    value={
+                      forecast.monthly_change_kg != null
+                        ? formatChange(forecast.monthly_change_kg, " kg")
+                        : "—"
+                    }
+                    icon={<TrendIcon value={forecast.monthly_change_kg} />}
+                  />
+                  <ForecastStat
+                    label={t("requiredWeeklyChange")}
+                    value={
+                      forecast.required_weekly_change_kg != null
+                        ? formatChange(forecast.required_weekly_change_kg, " kg")
+                        : "—"
+                    }
+                    icon={<Target className="h-3.5 w-3.5 text-rose-400" />}
+                  />
+                  <ForecastStat
+                    label={t("fatMonthlyChange")}
+                    value={
+                      forecast.monthly_fat_change_pct != null
+                        ? formatChange(forecast.monthly_fat_change_pct, "%")
+                        : "—"
+                    }
+                    icon={<TrendIcon value={forecast.monthly_fat_change_pct} />}
+                  />
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground text-center py-4">—</p>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* ── Goal Progress Engine ── */}
         {progress?.has_goal ? (
           <Card>
             <CardHeader>
@@ -145,7 +364,6 @@ export default function DashboardPage({ params: { locale } }: { params: { locale
             <CardContent className="space-y-5">
               {progress.has_data ? (
                 <>
-                  {/* Weight milestones */}
                   {progress.start_weight_kg != null && (
                     <div className="flex justify-between text-sm">
                       <div className="text-center">
@@ -166,8 +384,6 @@ export default function DashboardPage({ params: { locale } }: { params: { locale
                       )}
                     </div>
                   )}
-
-                  {/* Progress bar */}
                   {progress.progress_pct != null ? (
                     <div className="space-y-1.5">
                       <div className="flex justify-between text-xs text-muted-foreground">
@@ -181,8 +397,6 @@ export default function DashboardPage({ params: { locale } }: { params: { locale
                   ) : (
                     <p className="text-sm text-muted-foreground">{t("noTarget")}</p>
                   )}
-
-                  {/* Stats row */}
                   <div className="grid grid-cols-3 gap-3 pt-1">
                     <div className="rounded-lg border bg-muted/30 px-3 py-2 text-center">
                       <p className="text-xs text-muted-foreground mb-1">{t("weeklyAvg")}</p>
@@ -224,7 +438,29 @@ export default function DashboardPage({ params: { locale } }: { params: { locale
           </Card>
         )}
 
-        {/* Charts + Latest Measurements */}
+        {/* ── Projection Chart ── */}
+        {projection.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <TrendingUp className="h-5 w-5 text-purple-500" />
+                {t("projectionChart")}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ProjectionChart
+                data={projection}
+                labels={{
+                  actual: t("actualWeight"),
+                  projected: t("projectedWeight"),
+                  target: t("targetPath"),
+                }}
+              />
+            </CardContent>
+          </Card>
+        )}
+
+        {/* ── Charts + Latest Measurements ── */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Card>
             <CardHeader>
@@ -250,7 +486,6 @@ export default function DashboardPage({ params: { locale } }: { params: { locale
             </CardContent>
           </Card>
 
-          {/* Latest Measurements mini-card */}
           <Card>
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
@@ -275,9 +510,6 @@ export default function DashboardPage({ params: { locale } }: { params: { locale
                       </div>
                     ) : null;
                   })}
-                  {Object.values(data.latest_measurement).every((v) => v == null) && (
-                    <p className="text-sm text-muted-foreground text-center py-4">—</p>
-                  )}
                 </div>
               ) : (
                 <p className="text-sm text-muted-foreground text-center py-4">—</p>
@@ -286,7 +518,7 @@ export default function DashboardPage({ params: { locale } }: { params: { locale
           </Card>
         </div>
 
-        {/* Recent Workouts */}
+        {/* ── Recent Workouts ── */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -334,5 +566,27 @@ function StatCard({ icon, label, value }: { icon: React.ReactNode; label: string
         <p className="text-2xl font-bold">{value}</p>
       </CardContent>
     </Card>
+  );
+}
+
+function ForecastStat({
+  label,
+  value,
+  icon,
+  valueClass = "",
+}: {
+  label: string;
+  value: string;
+  icon?: React.ReactNode;
+  valueClass?: string;
+}) {
+  return (
+    <div className="rounded-lg border bg-muted/30 px-3 py-2">
+      <div className="flex items-center gap-1 mb-1">
+        {icon}
+        <p className="text-xs text-muted-foreground">{label}</p>
+      </div>
+      <p className={`font-semibold text-sm ${valueClass}`}>{value}</p>
+    </div>
   );
 }
