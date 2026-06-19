@@ -640,3 +640,77 @@ def weight_projection(current_user: User = Depends(get_current_user), db: Sessio
         cur += timedelta(days=1)
 
     return result
+
+
+def _compute_streak(user_id: int, db: Session) -> tuple[int, int, date | None]:
+    """Returns (current_streak, longest_streak, last_activity_date)."""
+    active_dates: set[date] = set()
+    for (d,) in db.query(WeightLog.logged_at).filter(WeightLog.user_id == user_id).all():
+        active_dates.add(d.date() if hasattr(d, "date") else d)
+    for (d,) in db.query(NutritionLog.logged_date).filter(NutritionLog.user_id == user_id).all():
+        active_dates.add(d)
+    for (d,) in db.query(Workout.logged_at).filter(Workout.user_id == user_id).all():
+        active_dates.add(d.date() if hasattr(d, "date") else d)
+
+    if not active_dates:
+        return 0, 0, None
+
+    today = date.today()
+    last_activity = max(active_dates)
+
+    current_streak = 0
+    check = today
+    if check not in active_dates:
+        check = today - timedelta(days=1)
+    while check in active_dates:
+        current_streak += 1
+        check -= timedelta(days=1)
+
+    sorted_dates = sorted(active_dates)
+    longest = 1
+    run = 1
+    for i in range(1, len(sorted_dates)):
+        if (sorted_dates[i] - sorted_dates[i - 1]).days == 1:
+            run += 1
+            if run > longest:
+                longest = run
+        else:
+            run = 1
+
+    return current_streak, longest, last_activity
+
+
+@router.get("/streak")
+def streak(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    current, longest, last = _compute_streak(current_user.id, db)
+    return {
+        "current_streak": current,
+        "longest_streak": longest,
+        "last_activity_date": last.isoformat() if last else None,
+    }
+
+
+@router.get("/achievements")
+def achievements(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    from app.models.ai_conversation import AiConversation
+    from app.models.ai_report import AiReport
+    from app.models.progress_photo import ProgressPhoto
+
+    weight_count = db.query(WeightLog).filter(WeightLog.user_id == current_user.id).count()
+    workout_count = db.query(Workout).filter(Workout.user_id == current_user.id).count()
+    photo_count = db.query(ProgressPhoto).filter(ProgressPhoto.user_id == current_user.id).count()
+    report_count = db.query(AiReport).filter(AiReport.user_id == current_user.id).count()
+    ai_count = db.query(AiConversation).filter(AiConversation.user_id == current_user.id).count()
+    current_streak, _, _ = _compute_streak(current_user.id, db)
+
+    return [
+        {"id": "first_weight_log", "unlocked": weight_count >= 1},
+        {"id": "first_workout", "unlocked": workout_count >= 1},
+        {"id": "first_photo", "unlocked": photo_count >= 1},
+        {"id": "first_report", "unlocked": report_count >= 1},
+        {"id": "first_ai_chat", "unlocked": ai_count >= 1},
+        {"id": "weight_logs_7", "unlocked": weight_count >= 7},
+        {"id": "workouts_10", "unlocked": workout_count >= 10},
+        {"id": "streak_7", "unlocked": current_streak >= 7},
+        {"id": "streak_30", "unlocked": current_streak >= 30},
+    ]

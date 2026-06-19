@@ -4,13 +4,13 @@ import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import { useRouter } from "next/navigation";
 import { AppLayout } from "@/components/layout/AppLayout";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { api } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
-import { CheckCircle2 } from "lucide-react";
+import { CheckCircle2, BarChart3 } from "lucide-react";
 
 export default function ProfilePage({ params: { locale } }: { params: { locale: string } }) {
   const t = useTranslations("profile");
@@ -25,6 +25,8 @@ export default function ProfilePage({ params: { locale } }: { params: { locale: 
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [heightError, setHeightError] = useState<string | null>(null);
+  const [memberSince, setMemberSince] = useState<string | null>(null);
+  const [stats, setStats] = useState<{ workouts: number; photos: number; reports: number } | null>(null);
 
   useEffect(() => {
     api.get("/api/v1/users/me").then((r) => {
@@ -34,7 +36,28 @@ export default function ProfilePage({ params: { locale } }: { params: { locale: 
       setHeight(u.height_cm ? String(u.height_cm) : "");
       setActivityLevel(u.activity_level ?? "");
       setLanguage(u.preferred_language ?? locale);
+      if (u.created_at) {
+        setMemberSince(
+          new Date(u.created_at).toLocaleDateString(locale === "tr" ? "tr-TR" : "en-US", {
+            year: "numeric",
+            month: "long",
+            day: "numeric",
+          })
+        );
+      }
     });
+
+    Promise.all([
+      api.get("/api/v1/analytics/workout-analytics"),
+      api.get("/api/v1/photos"),
+      api.get("/api/v1/reports?limit=200"),
+    ]).then(([w, p, r]) => {
+      setStats({
+        workouts: w.data.total_workouts ?? 0,
+        photos: p.data.length ?? 0,
+        reports: r.data.length ?? 0,
+      });
+    }).catch(() => {});
   }, [locale]);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -159,6 +182,41 @@ export default function ProfilePage({ params: { locale } }: { params: { locale: 
                 {loading ? "..." : t("updateProfile")}
               </Button>
             </form>
+          </CardContent>
+        </Card>
+        {/* ── Account Stats ── */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <BarChart3 className="h-4 w-4 text-primary" />
+              {t("statsTitle")}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 gap-3">
+              {memberSince && (
+                <div className="rounded-lg border bg-muted/30 px-3 py-3">
+                  <p className="text-xs text-muted-foreground mb-1">{t("memberSince")}</p>
+                  <p className="text-sm font-semibold">{memberSince}</p>
+                </div>
+              )}
+              {stats != null && (
+                <>
+                  <div className="rounded-lg border bg-muted/30 px-3 py-3 text-center">
+                    <p className="text-2xl font-bold text-primary">{stats.workouts}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{t("totalWorkouts")}</p>
+                  </div>
+                  <div className="rounded-lg border bg-muted/30 px-3 py-3 text-center">
+                    <p className="text-2xl font-bold text-pink-500">{stats.photos}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{t("totalPhotos")}</p>
+                  </div>
+                  <div className="rounded-lg border bg-muted/30 px-3 py-3 text-center">
+                    <p className="text-2xl font-bold text-indigo-500">{stats.reports}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{t("totalReports")}</p>
+                  </div>
+                </>
+              )}
+            </div>
           </CardContent>
         </Card>
       </div>

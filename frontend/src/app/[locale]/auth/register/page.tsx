@@ -28,7 +28,12 @@ export default function RegisterPage({ params: { locale } }: { params: { locale:
       await register(email, password, fullName);
       router.push(`/${locale}/dashboard`);
     } catch (err: any) {
-      setError(err?.response?.data?.detail || "Registration failed");
+      const detail = err?.response?.data?.detail;
+      if (Array.isArray(detail)) {
+        setError(detail.map((e: any) => e.msg).join(". "));
+      } else {
+        setError(detail || t("registerFailed"));
+      }
     } finally {
       setLoading(false);
     }
@@ -73,6 +78,7 @@ export default function RegisterPage({ params: { locale } }: { params: { locale:
                 required
                 minLength={8}
               />
+              <p className="text-xs text-muted-foreground">{t("passwordHint")}</p>
             </div>
             {error && <p className="text-sm text-destructive">{error}</p>}
             <Button type="submit" className="w-full" disabled={loading}>

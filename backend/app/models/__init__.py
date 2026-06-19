@@ -6,6 +6,10 @@ from app.models.measurement_log import MeasurementLog
 from app.models.nutrition_log import NutritionLog, FoodEntry
 from app.models.workout import Workout, WorkoutExercise
 from app.models.ai_conversation import AiConversation
+from app.models.ai_report import AiReport
+from app.models.progress_photo import ProgressPhoto
+from app.models.feedback import Feedback
+from app.models.usage_event import UsageEvent
 
 __all__ = [
     "User",
@@ -18,4 +22,8 @@ __all__ = [
     "Workout",
     "WorkoutExercise",
     "AiConversation",
+    "AiReport",
+    "ProgressPhoto",
+    "Feedback",
+    "UsageEvent",
 ]

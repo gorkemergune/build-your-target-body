@@ -11,6 +11,21 @@ import { ProjectionChart } from "@/components/charts/ProjectionChart";
 import { api } from "@/lib/api";
 import { formatNumber, formatChange, formatDate } from "@/lib/utils";
 import type { GoalProgress, Intelligence, ProjectionPoint } from "@/types";
+
+interface LatestReport {
+  id: number;
+  type: string;
+  title: string;
+  generated_at: string;
+}
+
+interface LatestPhoto {
+  id: number;
+  uploaded_at: string;
+  weight_kg: number | null;
+  body_fat_pct: number | null;
+  note: string | null;
+}
 import {
   Scale,
   Percent,
@@ -29,8 +44,15 @@ import {
   Clock,
   Activity,
   Heart,
+  Bot,
+  FileText,
+  Camera,
+  Zap,
+  Info,
 } from "lucide-react";
 import Link from "next/link";
+import { QuickActionsCard } from "@/components/dashboard/QuickActionsCard";
+import { AchievementToast } from "@/components/achievements/AchievementToast";
 
 interface DashboardData {
   latest_weight_kg: number | null;
@@ -83,9 +105,22 @@ export default function DashboardPage({ params: { locale } }: { params: { locale
   const [projection, setProjection] = useState<ProjectionPoint[]>([]);
   const [weightTrend, setWeightTrend] = useState<{ date: string; value: number }[]>([]);
   const [fatTrend, setFatTrend] = useState<{ date: string; value: number }[]>([]);
+  const [latestReport, setLatestReport] = useState<LatestReport | null>(null);
+  const [latestPhoto, setLatestPhoto] = useState<LatestPhoto | null>(null);
+  const [streak, setStreak] = useState<{ current_streak: number; longest_streak: number; last_activity_date: string | null } | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    api.get("/api/v1/reports?limit=1").then((r) => {
+      if (r.data.length > 0) setLatestReport(r.data[0]);
+    }).catch(() => {});
+
+    api.get("/api/v1/photos").then((r) => {
+      if (r.data.length > 0) setLatestPhoto(r.data[0]);
+    }).catch(() => {});
+
+    api.get("/api/v1/analytics/streak").then((r) => setStreak(r.data)).catch(() => {});
+
     Promise.all([
       api.get("/api/v1/analytics/dashboard"),
       api.get("/api/v1/analytics/goal-progress"),
@@ -125,8 +160,12 @@ export default function DashboardPage({ params: { locale } }: { params: { locale
 
   return (
     <AppLayout locale={locale}>
+      <AchievementToast locale={locale} />
       <div className="space-y-6">
         <h1 className="text-3xl font-bold">{t("title")}</h1>
+
+        {/* ── Quick Actions ── */}
+        <QuickActionsCard locale={locale} />
 
         {/* ── Stat Cards Row 1 ── */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -176,6 +215,49 @@ export default function DashboardPage({ params: { locale } }: { params: { locale
           />
         </div>
 
+        {/* ── Streak Banner ── */}
+        {streak != null && streak.longest_streak > 0 && (
+          <div className="flex items-center gap-3 rounded-xl border bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-950/20 dark:to-orange-950/20 border-amber-200 dark:border-amber-800 px-4 py-3">
+            <span className="text-2xl leading-none">🔥</span>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-baseline gap-3 flex-wrap">
+                <span className="text-sm font-bold text-amber-800 dark:text-amber-300">
+                  {streak.current_streak} {t("streakDays")} {t("currentStreak").toLowerCase()}
+                </span>
+                <span className="text-xs text-amber-600 dark:text-amber-400">
+                  {t("bestStreak")}: {streak.longest_streak} {t("streakDays")}
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Data Quality Warnings ── */}
+        {data && (() => {
+          const noNutrition = data.todays_calories == null;
+          const lastWorkoutDaysAgo = data.recent_workouts.length > 0
+            ? Math.floor((Date.now() - new Date(data.recent_workouts[0].logged_at).getTime()) / 86400000)
+            : null;
+          const workoutWarning = lastWorkoutDaysAgo != null && lastWorkoutDaysAgo > 7;
+          if (!noNutrition && !workoutWarning) return null;
+          return (
+            <div className="space-y-2">
+              {noNutrition && (
+                <div className="flex items-center gap-2.5 rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/20 px-3.5 py-2.5 text-sm text-blue-700 dark:text-blue-300">
+                  <Info className="h-4 w-4 shrink-0" />
+                  {t("warnNoNutrition")}
+                </div>
+              )}
+              {workoutWarning && lastWorkoutDaysAgo != null && (
+                <div className="flex items-center gap-2.5 rounded-lg border border-orange-200 dark:border-orange-800 bg-orange-50 dark:bg-orange-950/20 px-3.5 py-2.5 text-sm text-orange-700 dark:text-orange-300">
+                  <Info className="h-4 w-4 shrink-0" />
+                  {t("warnNoWorkout", { days: lastWorkoutDaysAgo })}
+                </div>
+              )}
+            </div>
+          );
+        })()}
+
         {/* ── Plateau Warning ── */}
         {plateau?.detected && (
           <Card className="border-yellow-300 bg-yellow-50 dark:bg-yellow-900/20 dark:border-yellow-700">
@@ -196,19 +278,39 @@ export default function DashboardPage({ params: { locale } }: { params: { locale
           </Card>
         )}
 
-        {/* ── Smart Insights ── */}
+        {/* ── Smart Insights + Ask AI ── */}
         {(intel?.insights?.length ?? 0) > 0 && (
-          <div className="flex flex-wrap gap-2">
-            {intel!.insights.map((key) => (
-              <span
-                key={key}
-                className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-medium ${
-                  INSIGHT_COLORS[key] ?? "bg-muted text-muted-foreground"
-                }`}
-              >
-                {t(key as any)}
-              </span>
-            ))}
+          <div className="flex flex-wrap gap-2 items-center justify-between">
+            <div className="flex flex-wrap gap-2">
+              {intel!.insights.map((key) => (
+                <span
+                  key={key}
+                  className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-medium ${
+                    INSIGHT_COLORS[key] ?? "bg-muted text-muted-foreground"
+                  }`}
+                >
+                  {t(key as any)}
+                </span>
+              ))}
+            </div>
+            <Button asChild variant="outline" size="sm" className="shrink-0">
+              <Link href={`/${locale}/ai-coach`}>
+                <Bot className="h-4 w-4 mr-1.5" />
+                {t("askAI")}
+              </Link>
+            </Button>
+          </div>
+        )}
+
+        {/* Ask AI button when no insights yet */}
+        {(intel?.insights?.length ?? 0) === 0 && (
+          <div className="flex justify-end">
+            <Button asChild variant="outline" size="sm">
+              <Link href={`/${locale}/ai-coach`}>
+                <Bot className="h-4 w-4 mr-1.5" />
+                {t("askAI")}
+              </Link>
+            </Button>
           </div>
         )}
 
@@ -518,6 +620,94 @@ export default function DashboardPage({ params: { locale } }: { params: { locale
           </Card>
         </div>
 
+        {/* ── Latest AI Report ── */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <FileText className="h-4 w-4 text-indigo-500" />
+                {t("latestReport")}
+              </CardTitle>
+              <Button asChild variant="ghost" size="sm">
+                <Link href={`/${locale}/reports`}>{t("viewReports")}</Link>
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {latestReport ? (
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-medium">{latestReport.title}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {new Date(latestReport.generated_at).toLocaleDateString(
+                      locale === "tr" ? "tr-TR" : "en-US"
+                    )}
+                  </p>
+                </div>
+                <Button asChild variant="outline" size="sm">
+                  <Link href={`/${locale}/reports`}>{t("viewReport")}</Link>
+                </Button>
+              </div>
+            ) : (
+              <div className="flex items-center justify-between">
+                <p className="text-sm text-muted-foreground">{t("noReportYet")}</p>
+                <Button asChild variant="outline" size="sm">
+                  <Link href={`/${locale}/reports`}>{t("generateReport")}</Link>
+                </Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* ── Latest Progress Photo ── */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Camera className="h-4 w-4 text-pink-500" />
+                {t("latestPhoto")}
+              </CardTitle>
+              <Button asChild variant="ghost" size="sm">
+                <Link href={`/${locale}/photos`}>{t("viewAllPhotos")}</Link>
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {latestPhoto ? (
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium">
+                    {new Date(latestPhoto.uploaded_at).toLocaleDateString(
+                      locale === "tr" ? "tr-TR" : "en-US"
+                    )}
+                  </p>
+                  <div className="flex gap-3 mt-1">
+                    {latestPhoto.weight_kg != null && (
+                      <span className="text-xs text-muted-foreground">{latestPhoto.weight_kg} kg</span>
+                    )}
+                    {latestPhoto.body_fat_pct != null && (
+                      <span className="text-xs text-muted-foreground">{latestPhoto.body_fat_pct}%</span>
+                    )}
+                    {latestPhoto.note && (
+                      <span className="text-xs text-muted-foreground truncate max-w-32">{latestPhoto.note}</span>
+                    )}
+                  </div>
+                </div>
+                <Button asChild variant="outline" size="sm">
+                  <Link href={`/${locale}/photos`}>{t("viewReport")}</Link>
+                </Button>
+              </div>
+            ) : (
+              <div className="flex items-center justify-between">
+                <p className="text-sm text-muted-foreground">{t("noPhotoYet")}</p>
+                <Button asChild variant="outline" size="sm">
+                  <Link href={`/${locale}/photos`}>{t("uploadFirstPhoto")}</Link>
+                </Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
         {/* ── Recent Workouts ── */}
         <Card>
           <CardHeader>
@@ -557,7 +747,7 @@ export default function DashboardPage({ params: { locale } }: { params: { locale
 
 function StatCard({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
   return (
-    <Card>
+    <Card className="transition-shadow hover:shadow-md">
       <CardContent className="pt-6">
         <div className="flex items-center gap-2 mb-1">
           {icon}

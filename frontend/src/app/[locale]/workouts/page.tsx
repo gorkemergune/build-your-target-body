@@ -146,50 +146,65 @@ export default function WorkoutsPage({ params: { locale } }: { params: { locale:
 
               {/* Exercise rows */}
               {exercises.length > 0 && (
-                <div className="space-y-2">
-                  {/* Header */}
-                  <div className="grid grid-cols-12 gap-1 text-xs text-muted-foreground px-1">
-                    <span className="col-span-4">{t("exerciseName")}</span>
-                    <span className="col-span-2">{t("sets")}</span>
-                    <span className="col-span-2">{t("reps")}</span>
-                    <span className="col-span-3">{t("weight")}</span>
-                  </div>
+                <div className="space-y-3">
                   {exercises.map((ex, i) => (
-                    <div key={i} className="grid grid-cols-12 gap-1 items-center">
-                      <Input
-                        placeholder={t("exerciseName")}
-                        value={ex.exercise_name}
-                        onChange={(e) => updateExercise(i, "exercise_name", e.target.value)}
-                        className="col-span-4 text-sm h-8"
-                      />
-                      <Input
-                        placeholder="—"
-                        type="number" min="1"
-                        value={ex.sets}
-                        onChange={(e) => updateExercise(i, "sets", e.target.value)}
-                        className="col-span-2 text-sm h-8"
-                      />
-                      <Input
-                        placeholder="—"
-                        type="number" min="1"
-                        value={ex.reps}
-                        onChange={(e) => updateExercise(i, "reps", e.target.value)}
-                        className="col-span-2 text-sm h-8"
-                      />
-                      <Input
-                        placeholder="0"
-                        type="number" step="0.5" min="0"
-                        value={ex.weight_kg}
-                        onChange={(e) => updateExercise(i, "weight_kg", e.target.value)}
-                        className="col-span-3 text-sm h-8"
-                      />
-                      <Button
-                        type="button" variant="ghost" size="icon"
-                        className="h-8 w-8 col-span-1 text-destructive hover:text-destructive"
-                        onClick={() => removeExercise(i)}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
+                    <div key={i} className="rounded-lg border p-3 space-y-2">
+                      <div className="flex items-center gap-2">
+                        <Input
+                          placeholder={t("exerciseName")}
+                          value={ex.exercise_name}
+                          onChange={(e) => updateExercise(i, "exercise_name", e.target.value)}
+                          className="flex-1 text-sm h-9"
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-9 w-9 shrink-0 text-destructive hover:text-destructive"
+                          onClick={() => removeExercise(i)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2">
+                        <div>
+                          <label className="text-xs text-muted-foreground">{t("sets")}</label>
+                          <Input
+                            placeholder="—"
+                            type="number"
+                            inputMode="numeric"
+                            min="1"
+                            value={ex.sets}
+                            onChange={(e) => updateExercise(i, "sets", e.target.value)}
+                            className="text-sm h-9 mt-0.5"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs text-muted-foreground">{t("reps")}</label>
+                          <Input
+                            placeholder="—"
+                            type="number"
+                            inputMode="numeric"
+                            min="1"
+                            value={ex.reps}
+                            onChange={(e) => updateExercise(i, "reps", e.target.value)}
+                            className="text-sm h-9 mt-0.5"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs text-muted-foreground">{t("weight")}</label>
+                          <Input
+                            placeholder="0"
+                            type="number"
+                            inputMode="decimal"
+                            step="0.5"
+                            min="0"
+                            value={ex.weight_kg}
+                            onChange={(e) => updateExercise(i, "weight_kg", e.target.value)}
+                            className="text-sm h-9 mt-0.5"
+                          />
+                        </div>
+                      </div>
                     </div>
                   ))}
                 </div>

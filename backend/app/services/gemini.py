@@ -1,11 +1,26 @@
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.models.goal import Goal
 from app.models.user import User
-from app.models.weight_log import WeightLog
+from app.services.ai_context import build_user_context
 
-_SYSTEM_PROMPTS = {
+_SYSTEM_PROMPT = """\
+You are a personal fitness coach, nutrition advisor, and accountability partner.
+
+STRICT RULES:
+1. Only use the data in the USER DATA section below. Never invent, estimate, or guess numbers.
+2. If the data is missing or insufficient to answer a question, say so clearly and explain what the user needs to log.
+3. Respond in the language specified in the USER DATA (Turkish or English).
+4. Be specific and reference actual numbers from the data. Be supportive and practical.
+5. Keep responses focused and actionable (3–5 paragraphs max unless more detail is clearly needed).
+6. Do not give medical or clinical advice. Focus on training, nutrition, and habit coaching.
+7. If the user asks something unrelated to fitness, politely redirect to their goal.
+
+USER DATA:
+{context}
+"""
+
+_LEGACY_PROMPTS = {
     "nutrition": (
         "You are a certified nutritionist and dietitian. "
         "Provide specific, science-backed nutrition advice tailored to the user's body transformation goal. "
@@ -14,7 +29,7 @@ _SYSTEM_PROMPTS = {
     "workout": (
         "You are an expert personal trainer. "
         "Provide effective workout advice aligned with the user's goal and fitness level. "
-        "Include sets, reps, and rest times when relevant. Respond in the user's preferred language."
+        "Respond in the user's preferred language."
     ),
     "goal_analysis": (
         "You are a body transformation coach. "
@@ -29,38 +44,41 @@ _SYSTEM_PROMPTS = {
 }
 
 
-async def get_ai_response(user: User, conversation_type: str, user_prompt: str, db: Session) -> str:
-    if not settings.GEMINI_API_KEY:
-        return (
-            "AI Coach is not configured. Please set the GEMINI_API_KEY environment variable to enable this feature."
-        )
-
-    import google.generativeai as genai  # lazy import — only when key is present
+def _get_model():
+    import google.generativeai as genai  # lazy import
 
     genai.configure(api_key=settings.GEMINI_API_KEY)
-    model = genai.GenerativeModel("gemini-1.5-flash")
+    return genai.GenerativeModel("gemini-1.5-flash")
 
-    system = _SYSTEM_PROMPTS.get(conversation_type, "You are a helpful fitness assistant.")
 
-    active_goal = db.query(Goal).filter(Goal.user_id == user.id, Goal.is_active == True).first()  # noqa: E712
-    latest_weight = (
-        db.query(WeightLog).filter(WeightLog.user_id == user.id).order_by(WeightLog.logged_at.desc()).first()
-    )
+async def get_chat_response(user: User, message: str, db: Session) -> str:
+    if not settings.GEMINI_API_KEY:
+        return (
+            "AI Coach is not configured. "
+            "Please set the GEMINI_API_KEY environment variable to enable this feature."
+        )
 
-    context_parts = [f"User: {user.full_name}"]
-    if user.height_cm:
-        context_parts.append(f"Height: {user.height_cm}cm")
-    if latest_weight:
-        context_parts.append(f"Current weight: {latest_weight.weight_kg}kg")
-    if active_goal:
-        context_parts.append(f"Goal: {active_goal.goal_type}")
-        if active_goal.target_weight_kg:
-            context_parts.append(f"Target weight: {active_goal.target_weight_kg}kg")
-        if active_goal.target_date:
-            context_parts.append(f"Target date: {active_goal.target_date.date().isoformat()}")
+    context = build_user_context(user, db)
+    system = _SYSTEM_PROMPT.format(context=context)
+    full_prompt = f"{system}\n\nUser question: {message}"
 
-    context = " | ".join(context_parts)
-    full_prompt = f"{system}\n\nUser context: {context}\n\nUser question: {user_prompt}"
+    model = _get_model()
+    response = model.generate_content(full_prompt)
+    return response.text
 
+
+async def get_ai_response(user: User, conversation_type: str, user_prompt: str, db: Session) -> str:
+    """Legacy endpoint handler — kept for backward compatibility."""
+    if not settings.GEMINI_API_KEY:
+        return (
+            "AI Coach is not configured. "
+            "Please set the GEMINI_API_KEY environment variable to enable this feature."
+        )
+
+    context = build_user_context(user, db)
+    system = _LEGACY_PROMPTS.get(conversation_type, "You are a helpful fitness assistant.")
+    full_prompt = f"{system}\n\nUser context (use only this data):\n{context}\n\nUser question: {user_prompt}"
+
+    model = _get_model()
     response = model.generate_content(full_prompt)
     return response.text

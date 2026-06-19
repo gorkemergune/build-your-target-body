@@ -48,8 +48,24 @@
 @layer base {
   * {
     @apply border-border;
+    -webkit-tap-highlight-color: transparent;
   }
   body {
     @apply bg-background text-foreground;
+    overflow-x: hidden;
+  }
+  /* Ensure chart containers never overflow */
+  .recharts-responsive-container {
+    min-width: 0 !important;
+  }
+}
+
+@layer utilities {
+  /* Safe-area aware padding for iOS notch / home indicator */
+  .pb-safe {
+    padding-bottom: max(env(safe-area-inset-bottom), 0.5rem);
+  }
+  .pt-safe {
+    padding-top: env(safe-area-inset-top);
   }
 }

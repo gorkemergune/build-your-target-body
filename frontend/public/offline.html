@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#3b82f6" />
+  <title>Offline – Build Your Target Body</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      min-height: 100dvh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #f8fafc;
+      color: #0f172a;
+      padding: 24px;
+    }
+    .container { text-align: center; max-width: 320px; }
+    .icon {
+      width: 72px; height: 72px;
+      background: #3b82f6;
+      border-radius: 20px;
+      margin: 0 auto 28px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    h1 { font-size: 1.5rem; font-weight: 700; margin-bottom: 10px; }
+    p { color: #64748b; font-size: 0.95rem; line-height: 1.6; margin-bottom: 28px; }
+    button {
+      background: #3b82f6;
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      padding: 12px 28px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    button:hover { background: #2563eb; }
+    button:active { background: #1d4ed8; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="icon">
+      <svg width="36" height="36" viewBox="0 0 24 24" fill="none"
+           stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="1" y1="6" x2="23" y2="6"/>
+        <line x1="1" y1="18" x2="23" y2="18"/>
+        <line x1="6" y1="1" x2="6" y2="11"/>
+        <line x1="18" y1="1" x2="18" y2="11"/>
+        <line x1="6" y1="13" x2="6" y2="23"/>
+        <line x1="18" y1="13" x2="18" y2="23"/>
+      </svg>
+    </div>
+    <h1>You're offline</h1>
+    <p>No internet connection detected.<br/>Please check your connection and try again.</p>
+    <button onclick="window.location.reload()">Try again</button>
+  </div>
+</body>
+</html>

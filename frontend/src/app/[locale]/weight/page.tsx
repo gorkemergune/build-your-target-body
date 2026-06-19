@@ -113,6 +113,7 @@ export default function WeightPage({ params: { locale } }: { params: { locale: s
                   <Label>{t("weightKg")}</Label>
                   <Input
                     type="number" step="0.1" min="20" max="500"
+                    inputMode="decimal"
                     value={weight} onChange={(e) => setWeight(e.target.value)} required
                   />
                 </div>
