@@ -1,0 +1,167 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { useTranslations } from "next-intl";
+import { useRouter } from "next/navigation";
+import { AppLayout } from "@/components/layout/AppLayout";
+import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { api } from "@/lib/api";
+import { useAuthStore } from "@/stores/auth";
+import { CheckCircle2 } from "lucide-react";
+
+export default function ProfilePage({ params: { locale } }: { params: { locale: string } }) {
+  const t = useTranslations("profile");
+  const router = useRouter();
+  const { fetchMe } = useAuthStore();
+  const [fullName, setFullName] = useState("");
+  const [gender, setGender] = useState("");
+  const [height, setHeight] = useState("");
+  const [activityLevel, setActivityLevel] = useState("");
+  const [language, setLanguage] = useState(locale);
+  const [loading, setLoading] = useState(false);
+  const [success, setSuccess] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [heightError, setHeightError] = useState<string | null>(null);
+
+  useEffect(() => {
+    api.get("/api/v1/users/me").then((r) => {
+      const u = r.data;
+      setFullName(u.full_name ?? "");
+      setGender(u.gender ?? "");
+      setHeight(u.height_cm ? String(u.height_cm) : "");
+      setActivityLevel(u.activity_level ?? "");
+      setLanguage(u.preferred_language ?? locale);
+    });
+  }, [locale]);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setSuccess(false);
+    setError(null);
+    setHeightError(null);
+
+    if (height) {
+      const h = parseFloat(height);
+      if (isNaN(h) || h < 100 || h > 250) {
+        setHeightError(locale === "tr" ? "Boy 100–250 cm arasında olmalıdır" : "Height must be between 100 and 250 cm");
+        return;
+      }
+    }
+
+    setLoading(true);
+    try {
+      await api.put("/api/v1/users/me", {
+        full_name: fullName.trim() || undefined,
+        gender: gender || undefined,
+        height_cm: height ? parseFloat(height) : undefined,
+        activity_level: activityLevel || undefined,
+        preferred_language: language,
+      });
+      await fetchMe();
+      setSuccess(true);
+      if (language !== locale) {
+        router.push(`/${language}/profile`);
+      }
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || t("errorMsg"));
+    } finally { setLoading(false); }
+  }
+
+  const selectClass = "w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring";
+
+  return (
+    <AppLayout locale={locale}>
+      <div className="space-y-6 max-w-lg">
+        <h1 className="text-3xl font-bold">{t("title")}</h1>
+        <Card>
+          <CardContent className="pt-6">
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="fullName">{t("fullName")}</Label>
+                <Input
+                  id="fullName"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  autoComplete="name"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="gender">{t("gender")}</Label>
+                <select
+                  id="gender"
+                  value={gender}
+                  onChange={(e) => setGender(e.target.value)}
+                  className={selectClass}
+                >
+                  <option value="">—</option>
+                  <option value="male">{t("male")}</option>
+                  <option value="female">{t("female")}</option>
+                  <option value="other">{t("other")}</option>
+                </select>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="height">{t("height")}</Label>
+                <Input
+                  id="height"
+                  type="number"
+                  step="0.1"
+                  min="100"
+                  max="250"
+                  value={height}
+                  onChange={(e) => { setHeight(e.target.value); setHeightError(null); }}
+                  className={heightError ? "border-destructive" : ""}
+                />
+                {heightError && <p className="text-xs text-destructive">{heightError}</p>}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="activityLevel">{t("activityLevel")}</Label>
+                <select
+                  id="activityLevel"
+                  value={activityLevel}
+                  onChange={(e) => setActivityLevel(e.target.value)}
+                  className={selectClass}
+                >
+                  <option value="">—</option>
+                  {["sedentary", "light", "moderate", "active", "very_active"].map((a) => (
+                    <option key={a} value={a}>{t(a as any)}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="language">{t("language")}</Label>
+                <select
+                  id="language"
+                  value={language}
+                  onChange={(e) => setLanguage(e.target.value)}
+                  className={selectClass}
+                >
+                  <option value="tr">Türkçe</option>
+                  <option value="en">English</option>
+                </select>
+              </div>
+
+              {success && (
+                <div className="flex items-center gap-2 rounded-md bg-green-50 border border-green-200 px-3 py-2 text-sm text-green-700">
+                  <CheckCircle2 className="h-4 w-4 shrink-0" />
+                  {t("successMsg")}
+                </div>
+              )}
+              {error && <p className="text-sm text-destructive">{error}</p>}
+
+              <Button type="submit" className="w-full" disabled={loading}>
+                {loading ? "..." : t("updateProfile")}
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+      </div>
+    </AppLayout>
+  );
+}
