@@ -52,6 +52,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { QuickActionsCard } from "@/components/dashboard/QuickActionsCard";
+import { CoachFeedCard } from "@/components/dashboard/CoachFeedCard";
 import { AchievementToast } from "@/components/achievements/AchievementToast";
 
 interface DashboardData {
@@ -707,6 +708,9 @@ export default function DashboardPage({ params: { locale } }: { params: { locale
             )}
           </CardContent>
         </Card>
+
+        {/* ── Coach Feed ── */}
+        <CoachFeedCard locale={locale} />
 
         {/* ── Recent Workouts ── */}
         <Card>

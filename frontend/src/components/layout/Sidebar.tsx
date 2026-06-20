@@ -18,6 +18,7 @@ import {
   Camera,
   MessageSquarePlus,
   Settings,
+  Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/auth";
@@ -43,6 +44,7 @@ export function Sidebar({ locale, onClose }: SidebarProps) {
     { href: "photos", label: t("photos"), icon: Camera },
     { href: "reports", label: t("reports"), icon: FileText },
     { href: "ai-coach", label: t("aiCoach"), icon: Bot },
+    { href: "coach/insights", label: t("coachInsights"), icon: Sparkles },
     { href: "feedback", label: t("feedback"), icon: MessageSquarePlus },
     { href: "profile", label: t("profile"), icon: User },
     { href: "settings/data", label: t("settings"), icon: Settings },

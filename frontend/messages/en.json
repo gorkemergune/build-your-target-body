@@ -28,6 +28,7 @@
     "photos": "Photos",
     "track": "Track",
     "feedback": "Feedback",
+    "coachInsights": "Coach Insights",
     "settings": "Settings",
     "logout": "Log Out"
   },
@@ -360,6 +361,28 @@
     "totalWorkouts": "Total Workouts",
     "totalPhotos": "Photos Uploaded",
     "totalReports": "AI Reports"
+  },
+  "coach": {
+    "feedTitle": "Coach Feed",
+    "viewAll": "View All Insights",
+    "noInsights": "No insights yet. Your coach is analyzing your data.",
+    "dismiss": "Dismiss",
+    "high": "High Priority",
+    "medium": "Medium",
+    "low": "Tip",
+    "category_consistency": "Consistency",
+    "category_workouts": "Workouts",
+    "category_nutrition": "Nutrition",
+    "category_plateau": "Plateau",
+    "category_progress": "Progress",
+    "category_body_fat": "Body Fat",
+    "historyTitle": "Coach Insights",
+    "historySubtitle": "Your proactive coaching history.",
+    "showDismissed": "Show dismissed",
+    "hideDismissed": "Hide dismissed",
+    "dismissed": "Dismissed",
+    "noHistory": "No insights generated yet.",
+    "generating": "Updating insights..."
   },
   "settings": {
     "dataTitle": "Data Management",

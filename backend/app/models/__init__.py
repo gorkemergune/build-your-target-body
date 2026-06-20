@@ -10,6 +10,7 @@ from app.models.ai_report import AiReport
 from app.models.progress_photo import ProgressPhoto
 from app.models.feedback import Feedback
 from app.models.usage_event import UsageEvent
+from app.models.coach_insight import CoachInsight
 
 __all__ = [
     "User",
@@ -26,4 +27,5 @@ __all__ = [
     "ProgressPhoto",
     "Feedback",
     "UsageEvent",
+    "CoachInsight",
 ]

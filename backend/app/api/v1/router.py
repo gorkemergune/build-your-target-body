@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import admin, ai_coach, analytics, auth, demo, export, feedback, goals, import_data, photos, reports, tracking, users
+from app.api.v1.endpoints import admin, ai_coach, analytics, auth, coach, demo, export, feedback, goals, import_data, photos, reports, tracking, users
 
 api_router = APIRouter(prefix="/api/v1")
 
@@ -17,3 +17,4 @@ api_router.include_router(admin.router)
 api_router.include_router(demo.router)
 api_router.include_router(export.router)
 api_router.include_router(import_data.router)
+api_router.include_router(coach.router)

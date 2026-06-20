@@ -28,6 +28,7 @@
     "photos": "Fotoğraflar",
     "track": "Takip",
     "feedback": "Geri Bildirim",
+    "coachInsights": "Koç İçgörüleri",
     "settings": "Ayarlar",
     "logout": "Çıkış Yap"
   },
@@ -360,6 +361,28 @@
     "totalWorkouts": "Toplam Antrenman",
     "totalPhotos": "Yüklenen Fotoğraf",
     "totalReports": "YZ Raporları"
+  },
+  "coach": {
+    "feedTitle": "Koç Akışı",
+    "viewAll": "Tüm İçgörüleri Gör",
+    "noInsights": "Henüz içgörü yok. Koçunuz verilerinizi analiz ediyor.",
+    "dismiss": "Kapat",
+    "high": "Yüksek Öncelik",
+    "medium": "Orta",
+    "low": "İpucu",
+    "category_consistency": "Tutarlılık",
+    "category_workouts": "Antrenmanlar",
+    "category_nutrition": "Beslenme",
+    "category_plateau": "Plato",
+    "category_progress": "İlerleme",
+    "category_body_fat": "Vücut Yağı",
+    "historyTitle": "Koç İçgörüleri",
+    "historySubtitle": "Proaktif koçluk geçmişiniz.",
+    "showDismissed": "Kapatılanları göster",
+    "hideDismissed": "Kapatılanları gizle",
+    "dismissed": "Kapatıldı",
+    "noHistory": "Henüz içgörü oluşturulmadı.",
+    "generating": "İçgörüler güncelleniyor..."
   },
   "settings": {
     "dataTitle": "Veri Yönetimi",

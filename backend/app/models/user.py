@@ -34,3 +34,4 @@ class User(Base):
     ai_conversations: Mapped[list["AiConversation"]] = relationship(back_populates="user", cascade="all, delete-orphan")  # noqa: F821
     ai_reports: Mapped[list["AiReport"]] = relationship(back_populates="user", cascade="all, delete-orphan")  # noqa: F821
     progress_photos: Mapped[list["ProgressPhoto"]] = relationship(back_populates="user", cascade="all, delete-orphan")  # noqa: F821
+    coach_insights: Mapped[list["CoachInsight"]] = relationship(back_populates="user", cascade="all, delete-orphan")  # noqa: F821
