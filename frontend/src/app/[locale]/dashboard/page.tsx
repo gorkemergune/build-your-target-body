@@ -49,11 +49,13 @@ import {
   Camera,
   Zap,
   Info,
+  Brain,
 } from "lucide-react";
 import Link from "next/link";
 import { QuickActionsCard } from "@/components/dashboard/QuickActionsCard";
 import { CoachFeedCard } from "@/components/dashboard/CoachFeedCard";
 import { DailyMissionsCard } from "@/components/dashboard/DailyMissionsCard";
+import { StepIntelligenceCard } from "@/components/dashboard/StepIntelligenceCard";
 import { AchievementToast } from "@/components/achievements/AchievementToast";
 
 interface DashboardData {
@@ -112,9 +114,11 @@ export default function DashboardPage({ params: { locale } }: { params: { locale
   const [streak, setStreak] = useState<{ current_streak: number; longest_streak: number; last_activity_date: string | null } | null>(null);
   const [loading, setLoading] = useState(true);
   const [todaySummary, setTodaySummary] = useState<any>(null);
+  const [workoutIntel, setWorkoutIntel] = useState<any>(null);
 
   useEffect(() => {
     api.get("/api/v1/nutrition/today-summary").then((r) => setTodaySummary(r.data)).catch(() => {});
+    api.get("/api/v1/analytics/workout-intelligence").then((r) => setWorkoutIntel(r.data)).catch(() => {});
 
     api.get("/api/v1/reports?limit=1").then((r) => {
       if (r.data.length > 0) setLatestReport(r.data[0]);
@@ -126,7 +130,7 @@ export default function DashboardPage({ params: { locale } }: { params: { locale
 
     api.get("/api/v1/analytics/streak").then((r) => setStreak(r.data)).catch(() => {});
 
-    Promise.all([
+    Promise.allSettled([
       api.get("/api/v1/analytics/dashboard"),
       api.get("/api/v1/analytics/goal-progress"),
       api.get("/api/v1/analytics/intelligence"),
@@ -135,12 +139,12 @@ export default function DashboardPage({ params: { locale } }: { params: { locale
       api.get("/api/v1/analytics/fat-trend?days=30"),
     ])
       .then(([dash, prog, int_, proj, wt, ft]) => {
-        setData(dash.data);
-        setProgress(prog.data);
-        setIntel(int_.data);
-        setProjection(proj.data);
-        setWeightTrend(wt.data);
-        setFatTrend(ft.data);
+        if (dash.status === "fulfilled") setData(dash.value.data);
+        if (prog.status === "fulfilled") setProgress(prog.value.data);
+        if (int_.status === "fulfilled") setIntel(int_.value.data);
+        if (proj.status === "fulfilled") setProjection(proj.value.data);
+        if (wt.status === "fulfilled") setWeightTrend(wt.value.data);
+        if (ft.status === "fulfilled") setFatTrend(ft.value.data);
       })
       .finally(() => setLoading(false));
   }, []);
@@ -224,7 +228,7 @@ export default function DashboardPage({ params: { locale } }: { params: { locale
         </div>
 
         {/* ── Macro Remaining Card ── */}
-        {todaySummary?.targets_available && (
+        {todaySummary?.targets_available && todaySummary?.remaining && todaySummary?.consumed && todaySummary?.targets && (
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
@@ -313,6 +317,9 @@ export default function DashboardPage({ params: { locale } }: { params: { locale
             </div>
           </div>
         )}
+
+        {/* ── Step Intelligence ── */}
+        <StepIntelligenceCard locale={locale} />
 
         {/* ── Data Quality Warnings ── */}
         {data && (() => {
@@ -789,6 +796,58 @@ export default function DashboardPage({ params: { locale } }: { params: { locale
             )}
           </CardContent>
         </Card>
+
+        {/* ── Workout Intelligence Card ── */}
+        {workoutIntel && workoutIntel.strongest_lift && (
+          <Card>
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Brain className="h-4 w-4 text-primary" />
+                  {t("workoutIntelligence")}
+                </CardTitle>
+                <Button asChild variant="ghost" size="sm" className="text-xs">
+                  <Link href={`/${locale}/workout-intelligence`}>
+                    {t("viewDetails")} →
+                  </Link>
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="grid grid-cols-3 gap-3">
+                <div className="rounded-lg bg-muted/30 px-3 py-2.5 text-center">
+                  <Trophy className="h-4 w-4 text-yellow-500 mx-auto mb-1" />
+                  <p className="text-base font-bold">{workoutIntel.strongest_lift.weight_pr}kg</p>
+                  <p className="text-[10px] text-muted-foreground truncate">{workoutIntel.strongest_lift.exercise_name}</p>
+                </div>
+                {workoutIntel.fastest_improving ? (
+                  <div className="rounded-lg bg-muted/30 px-3 py-2.5 text-center">
+                    <TrendingUp className="h-4 w-4 text-green-500 mx-auto mb-1" />
+                    <p className="text-base font-bold text-green-600">+{workoutIntel.fastest_improving.growth_pct}%</p>
+                    <p className="text-[10px] text-muted-foreground truncate">{workoutIntel.fastest_improving.exercise_name}</p>
+                  </div>
+                ) : (
+                  <div className="rounded-lg bg-muted/30 px-3 py-2.5 text-center">
+                    <TrendingUp className="h-4 w-4 text-muted-foreground mx-auto mb-1" />
+                    <p className="text-base font-bold">—</p>
+                    <p className="text-[10px] text-muted-foreground">{t("noTrend")}</p>
+                  </div>
+                )}
+                <div className={`rounded-lg px-3 py-2.5 text-center ${
+                  workoutIntel.plateaus.length > 0
+                    ? "bg-yellow-50 dark:bg-yellow-900/10"
+                    : "bg-muted/30"
+                }`}>
+                  <AlertTriangle className={`h-4 w-4 mx-auto mb-1 ${workoutIntel.plateaus.length > 0 ? "text-yellow-500" : "text-muted-foreground"}`} />
+                  <p className={`text-base font-bold ${workoutIntel.plateaus.length > 0 ? "text-yellow-600" : ""}`}>
+                    {workoutIntel.plateaus.length}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground">{t("plateaus")}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* ── Coach Feed ── */}
         <CoachFeedCard locale={locale} />

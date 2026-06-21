@@ -1,10 +1,11 @@
-from datetime import date, timedelta
+from collections import defaultdict
+from datetime import date, datetime, timedelta
 from typing import Optional
 
 from sqlalchemy import func
 
 from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.core.deps import get_current_user, get_db
 from app.models.body_fat_log import BodyFatLog
@@ -13,7 +14,7 @@ from app.models.measurement_log import MeasurementLog
 from app.models.nutrition_log import NutritionLog
 from app.models.user import User
 from app.models.weight_log import WeightLog
-from app.models.workout import Workout
+from app.models.workout import Workout, WorkoutExercise, WorkoutSet
 
 
 def _least_squares(points: list[tuple[float, float]]) -> tuple[Optional[float], Optional[float]]:
@@ -313,20 +314,37 @@ def workout_analytics(current_user: User = Depends(get_current_user), db: Sessio
     this_month = [w for w in all_workouts if w.logged_at.date() >= month_start]
 
     total_volume = 0.0
+    total_sets = 0
+    total_reps = 0
     for w in all_workouts:
-        for ex in w.exercises:
-            if ex.sets and ex.reps and ex.weight_kg:
-                total_volume += ex.sets * ex.reps * ex.weight_kg
+        if w.total_volume_kg:
+            total_volume += w.total_volume_kg
+        elif w.exercises:
+            for ex in w.exercises:
+                if ex.sets and ex.reps and ex.weight_kg:
+                    total_volume += ex.sets * ex.reps * ex.weight_kg
+        if w.total_sets:
+            total_sets += w.total_sets
+        if w.total_reps:
+            total_reps += w.total_reps
 
     durations = [w.duration_minutes for w in all_workouts if w.duration_minutes]
     avg_duration = round(sum(durations) / len(durations)) if durations else None
+
+    type_counts: dict[str, int] = {}
+    for w in all_workouts:
+        t = w.workout_type or "strength"
+        type_counts[t] = type_counts.get(t, 0) + 1
 
     return {
         "workouts_this_week": len(this_week),
         "workouts_this_month": len(this_month),
         "total_workouts": len(all_workouts),
         "total_volume_kg": round(total_volume, 1),
+        "total_sets": total_sets,
+        "total_reps": total_reps,
         "avg_duration_minutes": avg_duration,
+        "type_breakdown": type_counts,
     }
 
 
@@ -747,3 +765,158 @@ def achievements(current_user: User = Depends(get_current_user), db: Session = D
         {"id": "missions_30", "unlocked": total_habit_logs >= 30},
         {"id": "perfect_week", "unlocked": perfect_week},
     ]
+
+
+# ── Workout Intelligence ───────────────────────────────────────────────────────
+
+@router.get("/workout-intelligence")
+def workout_intelligence(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    _EMPTY = {
+        "personal_records": [], "strength_trends": [], "plateaus": [],
+        "consistency": {"total_workouts_12w": 0, "avg_workouts_per_week": 0.0},
+        "volume_trend": [], "top_lifts": [], "fastest_improving": None, "strongest_lift": None,
+    }
+
+    today = date.today()
+    cutoff_90d = datetime.combine(today - timedelta(days=90), datetime.min.time())
+
+    workouts = (
+        db.query(Workout)
+        .options(selectinload(Workout.exercises).selectinload(WorkoutExercise.workout_sets))
+        .filter(Workout.user_id == current_user.id, Workout.logged_at >= cutoff_90d)
+        .order_by(Workout.logged_at.asc())
+        .all()
+    )
+    if not workouts:
+        return _EMPTY
+
+    # Build per-exercise session history
+    exercise_history: dict[str, list[dict]] = defaultdict(list)
+    for w in workouts:
+        w_date = w.logged_at.date()
+        for ex in w.exercises:
+            working = [
+                s for s in ex.workout_sets
+                if s.set_type == "working" and (s.weight_kg or 0) > 0
+            ]
+            if not working:
+                continue
+            max_w = max(s.weight_kg for s in working)  # type: ignore[arg-type]
+            max_r = max((s.reps or 0) for s in working)
+            vol = sum((s.reps or 0) * (s.weight_kg or 0) for s in working)
+            exercise_history[ex.exercise_name].append(
+                {"date": w_date, "max_weight": max_w, "max_reps": max_r, "session_volume": vol}
+            )
+
+    # Personal records (all-time)
+    personal_records = []
+    for name, sessions in exercise_history.items():
+        w_best = max(sessions, key=lambda s: s["max_weight"])
+        r_best = max(sessions, key=lambda s: s["max_reps"])
+        v_best = max(sessions, key=lambda s: s["session_volume"])
+        personal_records.append({
+            "exercise_name": name,
+            "weight_pr": w_best["max_weight"],
+            "weight_pr_date": str(w_best["date"]),
+            "rep_pr": r_best["max_reps"],
+            "rep_pr_date": str(r_best["date"]),
+            "volume_pr": round(v_best["session_volume"], 1),
+            "volume_pr_date": str(v_best["date"]),
+            "session_count": len(sessions),
+        })
+    personal_records.sort(key=lambda x: x["weight_pr"], reverse=True)
+
+    # Strength trends: last 4 weeks vs prior 4 weeks
+    w4 = today - timedelta(weeks=4)
+    w8 = today - timedelta(weeks=8)
+    strength_trends = []
+    for name, sessions in exercise_history.items():
+        recent = [s for s in sessions if s["date"] >= w4]
+        prior = [s for s in sessions if w8 <= s["date"] < w4]
+        if len(recent) < 2 or not prior:
+            continue
+        r_avg = sum(s["max_weight"] for s in recent) / len(recent)
+        p_avg = sum(s["max_weight"] for s in prior) / len(prior)
+        if p_avg <= 0:
+            continue
+        strength_trends.append({
+            "exercise_name": name,
+            "recent_avg_weight": round(r_avg, 1),
+            "previous_avg_weight": round(p_avg, 1),
+            "growth_pct": round((r_avg - p_avg) / p_avg * 100, 1),
+            "recent_sessions": len(recent),
+        })
+    strength_trends.sort(key=lambda x: x["growth_pct"], reverse=True)
+
+    # Plateau detection: last 6 weeks, ≥ 3 sessions
+    w6 = today - timedelta(weeks=6)
+    plateaus = []
+    for name, sessions in exercise_history.items():
+        recent = sorted([s for s in sessions if s["date"] >= w6], key=lambda s: s["date"])
+        if len(recent) < 3:
+            continue
+        weights = [s["max_weight"] for s in recent]
+        last3 = weights[-3:]
+        span_weeks = round((recent[-1]["date"] - recent[0]["date"]).days / 7, 1)
+        is_declining = len(last3) == 3 and last3[0] > last3[1] >= last3[2]
+        is_plateau = (weights[-1] - weights[0]) < 2.5 and len(recent) >= 4
+        if is_declining:
+            plateaus.append({
+                "exercise_name": name, "status": "declining",
+                "sessions_checked": len(recent), "weeks_stagnant": span_weeks,
+                "last_weight": weights[-1], "first_weight": weights[0],
+            })
+        elif is_plateau:
+            plateaus.append({
+                "exercise_name": name, "status": "plateau",
+                "sessions_checked": len(recent), "weeks_stagnant": span_weeks,
+                "last_weight": weights[-1], "first_weight": weights[0],
+            })
+    plateaus.sort(key=lambda x: x["weeks_stagnant"], reverse=True)
+
+    # Consistency
+    w12 = today - timedelta(weeks=12)
+    recent_12w = [w for w in workouts if w.logged_at.date() >= w12]
+
+    # Weekly volume trend (12 weeks)
+    weekly_vol: dict[str, float] = defaultdict(float)
+    for w in workouts:
+        w_date = w.logged_at.date()
+        if w_date < w12:
+            continue
+        iso = w_date.strftime("%Y-W%W")
+        vol = w.total_volume_kg or 0.0
+        if vol == 0:
+            for ex in w.exercises:
+                for s in ex.workout_sets:
+                    if s.set_type == "working" and s.weight_kg and s.reps:
+                        vol += s.reps * s.weight_kg
+        weekly_vol[iso] += vol
+
+    volume_trend = [
+        {"week": k, "total_volume": round(v, 1)}
+        for k, v in sorted(weekly_vol.items())
+    ]
+
+    strongest = personal_records[0] if personal_records else None
+    fastest = strength_trends[0] if strength_trends else None
+
+    return {
+        "personal_records": personal_records,
+        "strength_trends": strength_trends[:10],
+        "plateaus": plateaus,
+        "consistency": {
+            "total_workouts_12w": len(recent_12w),
+            "avg_workouts_per_week": round(len(recent_12w) / 12, 1),
+        },
+        "volume_trend": volume_trend,
+        "top_lifts": [
+            {"exercise_name": r["exercise_name"], "best_weight": r["weight_pr"], "date": r["weight_pr_date"]}
+            for r in personal_records[:5]
+        ],
+        "fastest_improving": fastest,
+        "strongest_lift": strongest,
+    }

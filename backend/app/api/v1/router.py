@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import admin, admin_analytics, ai_coach, analytics, analytics_ingest, auth, barcode, coach, demo, export, feedback, food_library, food_scan, goals, habits, import_data, meal_planner, nutrition_targets, photos, reports, share, tracking, users
+from app.api.v1.endpoints import admin, admin_analytics, ai_coach, analytics, analytics_ingest, auth, barcode, coach, demo, exercises, export, feedback, food_library, food_scan, goals, habits, health, import_data, meal_planner, nutrition_targets, photos, reports, share, steps, tracking, users, wearable
 
 api_router = APIRouter(prefix="/api/v1")
 
@@ -27,3 +27,7 @@ api_router.include_router(nutrition_targets.router)
 api_router.include_router(food_library.router)
 api_router.include_router(barcode.router)
 api_router.include_router(meal_planner.router)
+api_router.include_router(exercises.router)
+api_router.include_router(health.router)
+api_router.include_router(wearable.router)
+api_router.include_router(steps.router)

@@ -1,6 +1,6 @@
 from datetime import date
 
-from sqlalchemy import Date, ForeignKey, String, Text
+from sqlalchemy import Date, ForeignKey, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -8,6 +8,7 @@ from app.db.base import Base
 
 class NutritionLog(Base):
     __tablename__ = "nutrition_logs"
+    __table_args__ = (UniqueConstraint("user_id", "logged_date", name="uq_nutrition_logs_user_date"),)
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)

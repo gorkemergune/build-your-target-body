@@ -22,6 +22,8 @@ import {
   ListChecks,
   Share2,
   ChefHat,
+  ClipboardList,
+  Brain,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/auth";
@@ -45,6 +47,8 @@ export function Sidebar({ locale, onClose }: SidebarProps) {
     { href: "nutrition", label: t("nutrition"), icon: UtensilsCrossed },
     { href: "meal-planner", label: t("mealPlanner"), icon: ChefHat },
     { href: "workouts", label: t("workouts"), icon: Dumbbell },
+    { href: "programs", label: t("programs"), icon: ClipboardList },
+    { href: "workout-intelligence", label: t("workoutIntelligence"), icon: Brain },
     { href: "photos", label: t("photos"), icon: Camera },
     { href: "reports", label: t("reports"), icon: FileText },
     { href: "habits", label: t("habits"), icon: ListChecks },

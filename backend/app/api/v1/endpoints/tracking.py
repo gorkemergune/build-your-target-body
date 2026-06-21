@@ -10,7 +10,7 @@ from app.models.measurement_log import MeasurementLog
 from app.models.nutrition_log import FoodEntry, NutritionLog
 from app.models.user import User
 from app.models.weight_log import WeightLog
-from app.models.workout import Workout, WorkoutExercise
+from app.models.workout import Workout, WorkoutExercise, WorkoutSet
 from app.schemas.tracking import (
     BodyFatLogCreate,
     BodyFatLogResponse,
@@ -286,6 +286,22 @@ def delete_food_entry(
 
 # ── Workouts ──────────────────────────────────────────────────────────────────
 
+def _compute_summary(exercises: list) -> tuple[float, int, int]:
+    """Return (total_volume_kg, total_sets, total_reps) from workout_sets."""
+    vol = 0.0
+    sets = 0
+    reps = 0
+    for ex in exercises:
+        for s in ex.workout_sets:
+            if s.set_type == "working":
+                sets += 1
+                if s.reps:
+                    reps += s.reps
+                if s.reps and s.weight_kg:
+                    vol += s.reps * s.weight_kg
+    return round(vol, 1), sets, reps
+
+
 @router.post("/workouts", response_model=WorkoutResponse, status_code=status.HTTP_201_CREATED)
 def create_workout(
     payload: WorkoutCreate,
@@ -298,11 +314,40 @@ def create_workout(
         logged_at=payload.logged_at or datetime.now(timezone.utc),
         notes=payload.notes,
         duration_minutes=payload.duration_minutes,
+        workout_type=payload.workout_type,
+        calories_burned=payload.calories_burned,
+        distance_km=payload.distance_km,
+        avg_heart_rate=payload.avg_heart_rate,
     )
     db.add(workout)
     db.flush()
-    for ex in payload.exercises:
-        db.add(WorkoutExercise(**ex.model_dump(), workout_id=workout.id))
+
+    for ex_data in payload.exercises:
+        ex = WorkoutExercise(
+            workout_id=workout.id,
+            exercise_name=ex_data.exercise_name,
+            exercise_id=ex_data.exercise_id,
+            order_index=ex_data.order_index,
+            notes=ex_data.notes,
+            sets=ex_data.sets,
+            reps=ex_data.reps,
+            weight_kg=ex_data.weight_kg,
+            duration_seconds=ex_data.duration_seconds,
+        )
+        db.add(ex)
+        db.flush()
+        for set_data in ex_data.sets_data:
+            db.add(WorkoutSet(workout_exercise_id=ex.id, **set_data.model_dump()))
+
+    db.flush()
+    # Load exercises+sets to compute summary
+    db.refresh(workout)
+    for ex in workout.exercises:
+        db.refresh(ex)
+    vol, total_sets, total_reps = _compute_summary(workout.exercises)
+    workout.total_volume_kg = vol
+    workout.total_sets = total_sets
+    workout.total_reps = total_reps
     db.commit()
     db.refresh(workout)
     return workout
@@ -316,7 +361,7 @@ def list_workouts(
 ):
     return (
         db.query(Workout)
-        .options(joinedload(Workout.exercises))
+        .options(joinedload(Workout.exercises).joinedload(WorkoutExercise.workout_sets))
         .filter(Workout.user_id == current_user.id)
         .order_by(Workout.logged_at.desc())
         .limit(limit)
@@ -332,7 +377,7 @@ def get_workout(
 ):
     workout = (
         db.query(Workout)
-        .options(joinedload(Workout.exercises))
+        .options(joinedload(Workout.exercises).joinedload(WorkoutExercise.workout_sets))
         .filter(Workout.id == workout_id, Workout.user_id == current_user.id)
         .first()
     )

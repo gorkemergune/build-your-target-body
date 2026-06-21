@@ -41,3 +41,6 @@ class User(Base):
     barcode_scans: Mapped[list["BarcodeScan"]] = relationship(back_populates="user", cascade="all, delete-orphan")  # noqa: F821
     ai_scan_logs: Mapped[list["AiScanLog"]] = relationship(back_populates="user", cascade="all, delete-orphan")  # noqa: F821
     meal_plans: Mapped[list["MealPlan"]] = relationship(back_populates="user", cascade="all, delete-orphan")  # noqa: F821
+    health_sync_logs: Mapped[list["HealthSyncLog"]] = relationship(back_populates="user", cascade="all, delete-orphan")  # noqa: F821
+    wearable_connections: Mapped[list["WearableConnection"]] = relationship(back_populates="user", cascade="all, delete-orphan")  # noqa: F821
+    step_achievements: Mapped[list["StepAchievement"]] = relationship(back_populates="user", cascade="all, delete-orphan")  # noqa: F821

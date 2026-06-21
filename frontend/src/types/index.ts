@@ -49,22 +49,74 @@ export interface NutritionLog {
   food_entries: FoodEntry[];
 }
 
+export interface ExerciseCategory {
+  id: number;
+  name: string;
+  name_tr: string;
+  slug: string;
+}
+
+export interface MuscleGroup {
+  id: number;
+  name: string;
+  name_tr: string;
+  slug: string;
+}
+
+export interface Exercise {
+  id: number;
+  name: string;
+  name_tr: string;
+  description: string | null;
+  category: ExerciseCategory;
+  primary_muscle: MuscleGroup;
+  secondary_muscles: string[];
+  equipment: string;
+  difficulty: string;
+  image_url: string | null;
+}
+
+export type WorkoutType = "strength" | "cardio" | "running" | "cycling" | "pilates" | "crossfit";
+export type SetType = "warmup" | "working";
+
+export interface WorkoutSet {
+  id: number;
+  set_number: number;
+  set_type: SetType;
+  reps: number | null;
+  weight_kg: number | null;
+  rpe: number | null;
+  duration_seconds: number | null;
+  distance_km: number | null;
+  notes: string | null;
+}
+
 export interface WorkoutExercise {
   id: number;
   exercise_name: string;
+  exercise_id: number | null;
+  order_index: number;
+  notes: string | null;
   sets: number | null;
   reps: number | null;
   weight_kg: number | null;
   duration_seconds: number | null;
-  notes: string | null;
+  workout_sets: WorkoutSet[];
 }
 
 export interface Workout {
   id: number;
   name: string;
   logged_at: string;
+  workout_type: WorkoutType;
   duration_minutes: number | null;
   notes: string | null;
+  calories_burned: number | null;
+  distance_km: number | null;
+  avg_heart_rate: number | null;
+  total_volume_kg: number | null;
+  total_sets: number | null;
+  total_reps: number | null;
   exercises: WorkoutExercise[];
 }
 
@@ -73,7 +125,10 @@ export interface WorkoutAnalytics {
   workouts_this_month: number;
   total_workouts: number;
   total_volume_kg: number;
+  total_sets: number;
+  total_reps: number;
   avg_duration_minutes: number | null;
+  type_breakdown: Record<string, number>;
 }
 
 export interface GoalProgress {

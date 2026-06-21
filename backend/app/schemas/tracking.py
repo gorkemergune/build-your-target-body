@@ -115,32 +115,71 @@ class NutritionLogResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class WorkoutSetCreate(BaseModel):
+    set_number: Annotated[int, Field(ge=1, le=100)]
+    set_type: Annotated[str, Field(pattern="^(warmup|working)$")] = "working"
+    reps: Annotated[int | None, Field(None, ge=1, le=10000)] = None
+    weight_kg: Annotated[float | None, Field(None, ge=0, le=2000)] = None
+    rpe: Annotated[float | None, Field(None, ge=1, le=10)] = None
+    duration_seconds: Annotated[int | None, Field(None, ge=1, le=86400)] = None
+    distance_km: Annotated[float | None, Field(None, ge=0, le=1000)] = None
+    notes: str | None = Field(None, max_length=300)
+
+
+class WorkoutSetResponse(BaseModel):
+    id: int
+    set_number: int
+    set_type: str
+    reps: int | None
+    weight_kg: float | None
+    rpe: float | None
+    duration_seconds: int | None
+    distance_km: float | None
+    notes: str | None
+
+    model_config = {"from_attributes": True}
+
+
 class WorkoutExerciseCreate(BaseModel):
     exercise_name: Annotated[str, Field(min_length=1, max_length=255)]
+    exercise_id: int | None = None
+    order_index: int = 0
+    notes: str | None = Field(None, max_length=500)
+    sets_data: list[WorkoutSetCreate] = []
+    # Legacy fields — still accepted for backward compat
     sets: Annotated[int | None, Field(None, ge=1, le=100)] = None
     reps: Annotated[int | None, Field(None, ge=1, le=1000)] = None
     weight_kg: Annotated[float | None, Field(None, ge=0, le=1000)] = None
     duration_seconds: Annotated[int | None, Field(None, ge=1, le=86400)] = None
-    notes: str | None = Field(None, max_length=500)
 
 
 class WorkoutExerciseResponse(BaseModel):
     id: int
     exercise_name: str
+    exercise_id: int | None
+    order_index: int
+    notes: str | None
     sets: int | None
     reps: int | None
     weight_kg: float | None
     duration_seconds: int | None
-    notes: str | None
+    workout_sets: list[WorkoutSetResponse] = []
 
     model_config = {"from_attributes": True}
+
+
+_WORKOUT_TYPE = Annotated[str, Field(pattern="^(strength|cardio|running|cycling|pilates|crossfit)$")]
 
 
 class WorkoutCreate(BaseModel):
     name: Annotated[str, Field(min_length=1, max_length=255)]
     logged_at: datetime | None = None
     notes: str | None = Field(None, max_length=1000)
-    duration_minutes: Annotated[int | None, Field(None, ge=1, le=600)] = None
+    duration_minutes: Annotated[int | None, Field(None, ge=1, le=1440)] = None
+    workout_type: _WORKOUT_TYPE = "strength"
+    calories_burned: Annotated[float | None, Field(None, ge=0, le=10000)] = None
+    distance_km: Annotated[float | None, Field(None, ge=0, le=1000)] = None
+    avg_heart_rate: Annotated[int | None, Field(None, ge=30, le=250)] = None
     exercises: list[WorkoutExerciseCreate] = []
 
 
@@ -148,8 +187,15 @@ class WorkoutResponse(BaseModel):
     id: int
     name: str
     logged_at: datetime
+    workout_type: str
     notes: str | None
     duration_minutes: int | None
+    calories_burned: float | None
+    distance_km: float | None
+    avg_heart_rate: int | None
+    total_volume_kg: float | None
+    total_sets: int | None
+    total_reps: int | None
     exercises: list[WorkoutExerciseResponse] = []
 
     model_config = {"from_attributes": True}
