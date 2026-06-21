@@ -1,4 +1,5 @@
 import axios from "axios";
+import { trackFeature, logError } from "@/lib/analytics";
 
 export const api = axios.create({
   baseURL: process.env.NEXT_PUBLIC_API_URL,
@@ -15,10 +16,39 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+// Map successful API calls to feature_used events
+const _FEATURE_MAP: Array<[string, RegExp, string]> = [
+  ["POST", /\/api\/v1\/weight/, "weight_log"],
+  ["POST", /\/api\/v1\/workouts/, "workout_log"],
+  ["POST", /\/api\/v1\/nutrition\/analyze-photo/, "food_scan"],
+  ["POST", /\/api\/v1\/nutrition/, "nutrition_log"],
+  ["POST", /\/api\/v1\/photos/, "photo_upload"],
+  ["POST", /\/api\/v1\/ai\/chat/, "ai_chat"],
+  ["POST", /\/api\/v1\/reports/, "report_generate"],
+  ["POST", /\/api\/v1\/coach\/generate/, "coach_generate"],
+  ["GET", /\/api\/v1\/export\/json/, "export_json"],
+  ["GET", /\/api\/v1\/export\/csv/, "export_csv"],
+  ["GET", /\/api\/v1\/export\/full-backup/, "export_backup"],
+  ["POST", /\/api\/v1\/import\/json/, "import_data"],
+];
+
 api.interceptors.response.use(
-  (res) => res,
+  (res) => {
+    // Track feature usage on successful writes
+    const method = (res.config.method ?? "").toUpperCase();
+    const url = res.config.url ?? "";
+    for (const [m, pattern, feature] of _FEATURE_MAP) {
+      if (method === m && pattern.test(url)) {
+        trackFeature(feature);
+        break;
+      }
+    }
+    return res;
+  },
   async (error) => {
     const original = error.config;
+
+    // Token refresh on 401
     if (error.response?.status === 401 && !original._retry) {
       original._retry = true;
       const refreshToken = localStorage.getItem("refresh_token");
@@ -38,6 +68,19 @@ api.interceptors.response.use(
         }
       }
     }
+
+    // Log 5xx errors (skip analytics endpoints to prevent loops)
+    const url = original?.url ?? "";
+    const status = error.response?.status;
+    if (status >= 500 && !url.includes("/analytics/")) {
+      logError({
+        error_type: "api_failure",
+        message: error.response?.data?.detail ?? error.message ?? "Server error",
+        endpoint: url,
+        status_code: status,
+      });
+    }
+
     return Promise.reject(error);
   }
 );

@@ -18,6 +18,7 @@ class NutritionLog(Base):
     fat_g: Mapped[float | None] = mapped_column(nullable=True)
     water_ml: Mapped[float | None] = mapped_column(nullable=True)
     daily_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    photo_path: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     user: Mapped["User"] = relationship(back_populates="nutrition_logs")  # noqa: F821
     food_entries: Mapped[list["FoodEntry"]] = relationship(back_populates="nutrition_log", cascade="all, delete-orphan")
@@ -35,5 +36,6 @@ class FoodEntry(Base):
     protein_g: Mapped[float | None] = mapped_column(nullable=True)
     carbs_g: Mapped[float | None] = mapped_column(nullable=True)
     fat_g: Mapped[float | None] = mapped_column(nullable=True)
+    food_item_id: Mapped[int | None] = mapped_column(ForeignKey("food_items.id", ondelete="SET NULL"), nullable=True)
 
     nutrition_log: Mapped["NutritionLog"] = relationship(back_populates="food_entries")

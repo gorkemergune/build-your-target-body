@@ -6,21 +6,21 @@ Architecture:
   2. Gemini (optional) writes a 2-sentence personalized explanation.
   3. Each trigger_key is throttled to 1 insight per 3 days to avoid spamming.
 """
-import asyncio
 from datetime import date, datetime, timedelta, timezone
 from dataclasses import dataclass
 from typing import Optional
 
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
 from app.models.body_fat_log import BodyFatLog
 from app.models.coach_insight import CoachInsight
 from app.models.goal import Goal
 from app.models.nutrition_log import NutritionLog
+from app.services.gemini_client import call_gemini
 from app.models.user import User
 from app.models.weight_log import WeightLog
 from app.models.workout import Workout
+from app.services.nutrition_calc import calc_age, calc_bmr, calc_macros, calc_tdee
 
 _THROTTLE_DAYS = 3
 
@@ -394,30 +394,124 @@ def _run_rules(user: User, db: Session) -> list[_Detection]:
                     ),
                 ))
 
+    # ── Rules 10-12: Personalized nutrition (requires profile) ──────────────
+    if (
+        user.gender and user.birth_date and user.height_cm
+        and user.activity_level and all_weight
+    ):
+        try:
+            age = calc_age(user.birth_date.date() if hasattr(user.birth_date, "date") else user.birth_date)
+            bmr = calc_bmr(all_weight[-1].weight_kg, user.height_cm, age, user.gender)
+            tdee_val = calc_tdee(bmr, user.activity_level)
+            goal_type = active_goal.goal_type if active_goal else None
+
+            if goal_type in ("weight_loss", "recomp"):
+                target_cal = max(1200, round(tdee_val - 500))
+            elif goal_type in ("weight_gain", "muscle_gain"):
+                target_cal = round(tdee_val + 350)
+            else:
+                target_cal = round(tdee_val)
+
+            protein_target, _, _ = calc_macros(target_cal, all_weight[-1].weight_kg, goal_type)
+
+            # Rule 10: Protein below personal target ──────────────────────────
+            logged_protein = [n.protein_g for n in nutrition_7d if n.protein_g is not None]
+            if len(logged_protein) >= 3:
+                avg_prot = sum(logged_protein) / len(logged_protein)
+                if avg_prot < protein_target * 0.75:
+                    detections.append(_Detection(
+                        trigger_key="low_protein_vs_target",
+                        category="nutrition",
+                        priority="medium",
+                        title_en="Protein Below Your Personal Target",
+                        title_tr="Protein Hedefinin Altında",
+                        fallback_en=(
+                            f"Your 7-day average protein is {round(avg_prot)}g — "
+                            f"your personal target is {protein_target}g based on your weight and goal. "
+                            "Prioritise lean protein at every meal to protect muscle mass."
+                        ),
+                        fallback_tr=(
+                            f"7 günlük ortalama proteinin {round(avg_prot)}g — "
+                            f"kilonuz ve hedefinize göre kişisel hedefin {protein_target}g. "
+                            "Kas kitlesini korumak için her öğünde yağsız protein önceliğin olsun."
+                        ),
+                        gemini_prompt=(
+                            f"User's 7-day avg protein is {round(avg_prot)}g vs personal target of {protein_target}g "
+                            f"(goal: {goal_type}, weight: {all_weight[-1].weight_kg}kg). "
+                            "In 2 sentences, explain the impact and give one practical fix."
+                        ),
+                    ))
+
+            # Rule 11: Calorie surplus on weight-loss goal ────────────────────
+            if goal_type in ("weight_loss", "recomp"):
+                logged_cals = [n.total_calories for n in nutrition_7d if n.total_calories is not None]
+                if len(logged_cals) >= 3:
+                    avg_cal = sum(logged_cals) / len(logged_cals)
+                    if avg_cal > target_cal * 1.15:
+                        over = round(avg_cal - target_cal)
+                        detections.append(_Detection(
+                            trigger_key="calorie_surplus_loss_goal",
+                            category="nutrition",
+                            priority="high",
+                            title_en="Exceeding Calorie Target",
+                            title_tr="Kalori Hedefi Aşılıyor",
+                            fallback_en=(
+                                f"You've been averaging {round(avg_cal)} kcal — "
+                                f"about {over} kcal above your {target_cal} kcal target. "
+                                "This surplus may be slowing your weight loss progress."
+                            ),
+                            fallback_tr=(
+                                f"Ortalama {round(avg_cal)} kcal tüketiyorsunuz — "
+                                f"hedefin {target_cal} kcal'in yaklaşık {over} kcal üzerinde. "
+                                "Bu fazlalık kilo verme ilerlemenizi yavaşlatıyor olabilir."
+                            ),
+                            gemini_prompt=(
+                                f"User is averaging {round(avg_cal)} kcal vs a target of {target_cal} kcal "
+                                f"(goal: {goal_type}). In 2 sentences, explain the impact and suggest one habit fix."
+                            ),
+                        ))
+
+            # Rule 12: Extreme calorie deficit ────────────────────────────────
+            logged_cals_all = [n.total_calories for n in nutrition_7d if n.total_calories is not None]
+            if len(logged_cals_all) >= 2:
+                avg_cal_all = sum(logged_cals_all) / len(logged_cals_all)
+                floor = 1500 if user.gender == "male" else 1200
+                if avg_cal_all < floor * 0.85:
+                    detections.append(_Detection(
+                        trigger_key="extreme_calorie_deficit",
+                        category="nutrition",
+                        priority="high",
+                        title_en="Calorie Intake Very Low",
+                        title_tr="Kalori Alımı Çok Düşük",
+                        fallback_en=(
+                            f"Your average calorie intake ({round(avg_cal_all)} kcal) is well below safe minimums. "
+                            "Very low intakes can cause muscle loss and metabolic adaptation. "
+                            f"Aim for at least {floor} kcal/day."
+                        ),
+                        fallback_tr=(
+                            f"Ortalama kalori alımınız ({round(avg_cal_all)} kcal) güvenli minimumların çok altında. "
+                            "Çok düşük alım kas kaybına ve metabolik adaptasyona yol açabilir. "
+                            f"Günde en az {floor} kcal hedefleyin."
+                        ),
+                        gemini_prompt=(
+                            f"User is averaging only {round(avg_cal_all)} kcal/day (gender: {user.gender}, "
+                            f"floor: {floor} kcal). In 2 sentences, explain the risks and urge safe calorie intake."
+                        ),
+                    ))
+        except Exception:
+            pass  # profile incomplete or calc error — skip nutrition rules silently
+
     return detections
 
 
 async def _explain_with_gemini(prompt: str, lang: str, fallback: str) -> str:
-    if not settings.GEMINI_API_KEY:
-        return fallback
-    try:
-        import google.generativeai as genai
-        genai.configure(api_key=settings.GEMINI_API_KEY)
-        model = genai.GenerativeModel("gemini-1.5-flash")
-        lang_instruction = "Respond in Turkish." if lang == "tr" else "Respond in English."
-        full = (
-            f"You are a fitness coach writing a proactive insight for a user's coaching feed. "
-            f"{lang_instruction} Be warm, specific, and actionable. Keep it to 2–3 sentences.\n\n"
-            f"Finding: {prompt}"
-        )
-        loop = asyncio.get_event_loop()
-        response = await asyncio.wait_for(
-            loop.run_in_executor(None, lambda: model.generate_content(full)),
-            timeout=8.0,
-        )
-        return response.text.strip()
-    except Exception:
-        return fallback
+    lang_instruction = "Respond in Turkish." if lang == "tr" else "Respond in English."
+    full = (
+        f"You are a fitness coach writing a proactive insight for a user's coaching feed. "
+        f"{lang_instruction} Be warm, specific, and actionable. Keep it to 2–3 sentences.\n\n"
+        f"Finding: {prompt}"
+    )
+    return await call_gemini(full, prompt_type="coach_insight", timeout_s=15.0, fallback=fallback)
 
 
 def _already_generated(user_id: int, trigger_key: str, db: Session) -> bool:

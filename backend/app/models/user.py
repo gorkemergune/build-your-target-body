@@ -35,3 +35,9 @@ class User(Base):
     ai_reports: Mapped[list["AiReport"]] = relationship(back_populates="user", cascade="all, delete-orphan")  # noqa: F821
     progress_photos: Mapped[list["ProgressPhoto"]] = relationship(back_populates="user", cascade="all, delete-orphan")  # noqa: F821
     coach_insights: Mapped[list["CoachInsight"]] = relationship(back_populates="user", cascade="all, delete-orphan")  # noqa: F821
+    habits: Mapped[list["Habit"]] = relationship(back_populates="user", cascade="all, delete-orphan")  # noqa: F821
+    food_items: Mapped[list["FoodItem"]] = relationship(back_populates="user", cascade="all, delete-orphan")  # noqa: F821
+    meal_templates: Mapped[list["MealTemplate"]] = relationship(back_populates="user", cascade="all, delete-orphan")  # noqa: F821
+    barcode_scans: Mapped[list["BarcodeScan"]] = relationship(back_populates="user", cascade="all, delete-orphan")  # noqa: F821
+    ai_scan_logs: Mapped[list["AiScanLog"]] = relationship(back_populates="user", cascade="all, delete-orphan")  # noqa: F821
+    meal_plans: Mapped[list["MealPlan"]] = relationship(back_populates="user", cascade="all, delete-orphan")  # noqa: F821

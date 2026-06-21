@@ -1,8 +1,8 @@
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
 from app.models.user import User
 from app.services.ai_context import build_user_context
+from app.services.gemini_client import call_gemini
 
 _SYSTEM_PROMPT = """\
 You are a personal fitness coach, nutrition advisor, and accountability partner.
@@ -43,42 +43,26 @@ _LEGACY_PROMPTS = {
     ),
 }
 
+_FALLBACK_CHAT = (
+    "I'm having trouble connecting to the AI right now. Please try again in a moment.\n\n"
+    "If this keeps happening, make sure GEMINI_API_KEY is configured."
+)
 
-def _get_model():
-    import google.generativeai as genai  # lazy import
-
-    genai.configure(api_key=settings.GEMINI_API_KEY)
-    return genai.GenerativeModel("gemini-1.5-flash")
+_FALLBACK_COACH = (
+    "AI Coach is temporarily unavailable. Please try again shortly.\n\n"
+    "If this keeps happening, make sure GEMINI_API_KEY is configured."
+)
 
 
 async def get_chat_response(user: User, message: str, db: Session) -> str:
-    if not settings.GEMINI_API_KEY:
-        return (
-            "AI Coach is not configured. "
-            "Please set the GEMINI_API_KEY environment variable to enable this feature."
-        )
-
     context = build_user_context(user, db)
-    system = _SYSTEM_PROMPT.format(context=context)
-    full_prompt = f"{system}\n\nUser question: {message}"
-
-    model = _get_model()
-    response = model.generate_content(full_prompt)
-    return response.text
+    full_prompt = _SYSTEM_PROMPT.format(context=context) + f"\n\nUser question: {message}"
+    return await call_gemini(full_prompt, prompt_type="ai_chat", timeout_s=30.0, fallback=_FALLBACK_CHAT)
 
 
 async def get_ai_response(user: User, conversation_type: str, user_prompt: str, db: Session) -> str:
     """Legacy endpoint handler — kept for backward compatibility."""
-    if not settings.GEMINI_API_KEY:
-        return (
-            "AI Coach is not configured. "
-            "Please set the GEMINI_API_KEY environment variable to enable this feature."
-        )
-
     context = build_user_context(user, db)
     system = _LEGACY_PROMPTS.get(conversation_type, "You are a helpful fitness assistant.")
     full_prompt = f"{system}\n\nUser context (use only this data):\n{context}\n\nUser question: {user_prompt}"
-
-    model = _get_model()
-    response = model.generate_content(full_prompt)
-    return response.text
+    return await call_gemini(full_prompt, prompt_type=f"coach_{conversation_type}", timeout_s=30.0, fallback=_FALLBACK_COACH)

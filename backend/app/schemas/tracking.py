@@ -72,6 +72,7 @@ class FoodEntryCreate(BaseModel):
     protein_g: Annotated[float | None, Field(None, ge=0, le=1000)] = None
     carbs_g: Annotated[float | None, Field(None, ge=0, le=2000)] = None
     fat_g: Annotated[float | None, Field(None, ge=0, le=1000)] = None
+    food_item_id: int | None = None
 
 
 class FoodEntryResponse(BaseModel):
@@ -83,6 +84,7 @@ class FoodEntryResponse(BaseModel):
     protein_g: float | None
     carbs_g: float | None
     fat_g: float | None
+    food_item_id: int | None
 
     model_config = {"from_attributes": True}
 
@@ -95,6 +97,7 @@ class NutritionLogCreate(BaseModel):
     fat_g: Annotated[float | None, Field(None, ge=0, le=1000)] = None
     water_ml: Annotated[float | None, Field(None, ge=0, le=10000)] = None
     daily_notes: str | None = Field(None, max_length=2000)
+    photo_path: str | None = Field(None, max_length=255)
 
 
 class NutritionLogResponse(BaseModel):
@@ -106,6 +109,7 @@ class NutritionLogResponse(BaseModel):
     fat_g: float | None
     water_ml: float | None
     daily_notes: str | None
+    photo_path: str | None = None
     food_entries: list[FoodEntryResponse] = []
 
     model_config = {"from_attributes": True}

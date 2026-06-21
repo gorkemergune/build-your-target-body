@@ -19,6 +19,9 @@ import {
   MessageSquarePlus,
   Settings,
   Sparkles,
+  ListChecks,
+  Share2,
+  ChefHat,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/auth";
@@ -40,9 +43,12 @@ export function Sidebar({ locale, onClose }: SidebarProps) {
     { href: "body-fat", label: t("bodyFat"), icon: Percent },
     { href: "measurements", label: t("measurements"), icon: Ruler },
     { href: "nutrition", label: t("nutrition"), icon: UtensilsCrossed },
+    { href: "meal-planner", label: t("mealPlanner"), icon: ChefHat },
     { href: "workouts", label: t("workouts"), icon: Dumbbell },
     { href: "photos", label: t("photos"), icon: Camera },
     { href: "reports", label: t("reports"), icon: FileText },
+    { href: "habits", label: t("habits"), icon: ListChecks },
+    { href: "share", label: t("share"), icon: Share2 },
     { href: "ai-coach", label: t("aiCoach"), icon: Bot },
     { href: "coach/insights", label: t("coachInsights"), icon: Sparkles },
     { href: "feedback", label: t("feedback"), icon: MessageSquarePlus },

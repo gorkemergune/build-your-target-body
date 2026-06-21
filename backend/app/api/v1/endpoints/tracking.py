@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.core.deps import get_current_user, get_db
 from app.models.body_fat_log import BodyFatLog
+from app.models.food_item import FoodItem
 from app.models.measurement_log import MeasurementLog
 from app.models.nutrition_log import FoodEntry, NutritionLog
 from app.models.user import User
@@ -253,6 +254,14 @@ def add_food_entry(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Nutrition log not found")
     entry = FoodEntry(**payload.model_dump(), nutrition_log_id=log_id)
     db.add(entry)
+    if payload.food_item_id:
+        food_item = db.query(FoodItem).filter(
+            FoodItem.id == payload.food_item_id,
+            FoodItem.user_id == current_user.id,
+        ).first()
+        if food_item:
+            food_item.use_count += 1
+            food_item.last_used_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(entry)
     return entry

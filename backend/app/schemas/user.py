@@ -8,6 +8,7 @@ class UserResponse(BaseModel):
     email: EmailStr
     full_name: str
     gender: str | None
+    birth_date: datetime | None
     height_cm: float | None
     activity_level: str | None
     preferred_language: str

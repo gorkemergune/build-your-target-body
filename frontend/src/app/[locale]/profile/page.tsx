@@ -18,6 +18,7 @@ export default function ProfilePage({ params: { locale } }: { params: { locale: 
   const { fetchMe } = useAuthStore();
   const [fullName, setFullName] = useState("");
   const [gender, setGender] = useState("");
+  const [birthDate, setBirthDate] = useState("");
   const [height, setHeight] = useState("");
   const [activityLevel, setActivityLevel] = useState("");
   const [language, setLanguage] = useState(locale);
@@ -33,6 +34,7 @@ export default function ProfilePage({ params: { locale } }: { params: { locale: 
       const u = r.data;
       setFullName(u.full_name ?? "");
       setGender(u.gender ?? "");
+      setBirthDate(u.birth_date ? u.birth_date.slice(0, 10) : "");
       setHeight(u.height_cm ? String(u.height_cm) : "");
       setActivityLevel(u.activity_level ?? "");
       setLanguage(u.preferred_language ?? locale);
@@ -69,7 +71,7 @@ export default function ProfilePage({ params: { locale } }: { params: { locale: 
     if (height) {
       const h = parseFloat(height);
       if (isNaN(h) || h < 100 || h > 250) {
-        setHeightError(locale === "tr" ? "Boy 100–250 cm arasında olmalıdır" : "Height must be between 100 and 250 cm");
+        setHeightError(t("heightError"));
         return;
       }
     }
@@ -79,6 +81,7 @@ export default function ProfilePage({ params: { locale } }: { params: { locale: 
       await api.put("/api/v1/users/me", {
         full_name: fullName.trim() || undefined,
         gender: gender || undefined,
+        birth_date: birthDate || undefined,
         height_cm: height ? parseFloat(height) : undefined,
         activity_level: activityLevel || undefined,
         preferred_language: language,
@@ -127,6 +130,18 @@ export default function ProfilePage({ params: { locale } }: { params: { locale: 
                 </select>
               </div>
 
+              <div className="space-y-2">
+                <Label htmlFor="birthDate">{t("birthDate")}</Label>
+                <Input
+                  id="birthDate"
+                  type="date"
+                  value={birthDate}
+                  onChange={(e) => setBirthDate(e.target.value)}
+                  max={new Date().toISOString().slice(0, 10)}
+                />
+                <p className="text-xs text-muted-foreground">{t("birthDateHint")}</p>
+              </div>
+
               <div className="space-y-1.5">
                 <Label htmlFor="height">{t("height")}</Label>
                 <Input
@@ -151,8 +166,8 @@ export default function ProfilePage({ params: { locale } }: { params: { locale: 
                   className={selectClass}
                 >
                   <option value="">—</option>
-                  {["sedentary", "light", "moderate", "active", "very_active"].map((a) => (
-                    <option key={a} value={a}>{t(a as any)}</option>
+                  {(["sedentary", "lightly_active", "moderately_active", "very_active", "extremely_active"] as const).map((a) => (
+                    <option key={a} value={a}>{t(a)}</option>
                   ))}
                 </select>
               </div>

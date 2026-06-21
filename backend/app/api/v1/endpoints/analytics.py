@@ -1,6 +1,8 @@
 from datetime import date, timedelta
 from typing import Optional
 
+from sqlalchemy import func
+
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session, joinedload
 
@@ -694,6 +696,7 @@ def streak(current_user: User = Depends(get_current_user), db: Session = Depends
 def achievements(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     from app.models.ai_conversation import AiConversation
     from app.models.ai_report import AiReport
+    from app.models.habit import HabitLog
     from app.models.progress_photo import ProgressPhoto
 
     weight_count = db.query(WeightLog).filter(WeightLog.user_id == current_user.id).count()
@@ -702,6 +705,33 @@ def achievements(current_user: User = Depends(get_current_user), db: Session = D
     report_count = db.query(AiReport).filter(AiReport.user_id == current_user.id).count()
     ai_count = db.query(AiConversation).filter(AiConversation.user_id == current_user.id).count()
     current_streak, _, _ = _compute_streak(current_user.id, db)
+
+    # Habit achievements
+    total_habit_logs = (
+        db.query(func.count(HabitLog.id))
+        .filter(HabitLog.user_id == current_user.id)
+        .scalar() or 0
+    )
+
+    # Perfect week: 7 consecutive days with at least one habit completed
+    habit_log_dates: set[date] = {
+        row[0]
+        for row in db.query(HabitLog.completed_date)
+        .filter(HabitLog.user_id == current_user.id)
+        .distinct()
+        .all()
+    }
+    perfect_week = False
+    if len(habit_log_dates) >= 7:
+        today = date.today()
+        consecutive = 0
+        check = today
+        while check in habit_log_dates:
+            consecutive += 1
+            if consecutive >= 7:
+                perfect_week = True
+                break
+            check -= timedelta(days=1)
 
     return [
         {"id": "first_weight_log", "unlocked": weight_count >= 1},
@@ -713,4 +743,7 @@ def achievements(current_user: User = Depends(get_current_user), db: Session = D
         {"id": "workouts_10", "unlocked": workout_count >= 10},
         {"id": "streak_7", "unlocked": current_streak >= 7},
         {"id": "streak_30", "unlocked": current_streak >= 30},
+        {"id": "missions_7", "unlocked": total_habit_logs >= 7},
+        {"id": "missions_30", "unlocked": total_habit_logs >= 30},
+        {"id": "perfect_week", "unlocked": perfect_week},
     ]

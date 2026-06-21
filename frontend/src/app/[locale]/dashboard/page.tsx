@@ -53,6 +53,7 @@ import {
 import Link from "next/link";
 import { QuickActionsCard } from "@/components/dashboard/QuickActionsCard";
 import { CoachFeedCard } from "@/components/dashboard/CoachFeedCard";
+import { DailyMissionsCard } from "@/components/dashboard/DailyMissionsCard";
 import { AchievementToast } from "@/components/achievements/AchievementToast";
 
 interface DashboardData {
@@ -110,8 +111,11 @@ export default function DashboardPage({ params: { locale } }: { params: { locale
   const [latestPhoto, setLatestPhoto] = useState<LatestPhoto | null>(null);
   const [streak, setStreak] = useState<{ current_streak: number; longest_streak: number; last_activity_date: string | null } | null>(null);
   const [loading, setLoading] = useState(true);
+  const [todaySummary, setTodaySummary] = useState<any>(null);
 
   useEffect(() => {
+    api.get("/api/v1/nutrition/today-summary").then((r) => setTodaySummary(r.data)).catch(() => {});
+
     api.get("/api/v1/reports?limit=1").then((r) => {
       if (r.data.length > 0) setLatestReport(r.data[0]);
     }).catch(() => {});
@@ -168,6 +172,9 @@ export default function DashboardPage({ params: { locale } }: { params: { locale
         {/* ── Quick Actions ── */}
         <QuickActionsCard locale={locale} />
 
+        {/* ── Daily Missions ── */}
+        <DailyMissionsCard locale={locale} />
+
         {/* ── Stat Cards Row 1 ── */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <StatCard
@@ -215,6 +222,80 @@ export default function DashboardPage({ params: { locale } }: { params: { locale
             value={progress?.progress_pct != null ? `${formatNumber(progress.progress_pct, 0)}%` : "—"}
           />
         </div>
+
+        {/* ── Macro Remaining Card ── */}
+        {todaySummary?.targets_available && (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+                <Flame className="h-4 w-4 text-primary" />
+                {t("macroRemaining")}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {/* Calories */}
+                <div className="space-y-1.5">
+                  <div className="flex justify-between text-xs">
+                    <span className="text-muted-foreground">{t("calories")}</span>
+                    <span className={`font-semibold ${todaySummary.remaining.calories <= 0 ? "text-green-600" : ""}`}>
+                      {todaySummary.remaining.calories > 0 ? `${todaySummary.remaining.calories}` : "✓"}
+                    </span>
+                  </div>
+                  <div className="h-2 rounded-full bg-muted overflow-hidden">
+                    <div
+                      className={`h-full rounded-full ${todaySummary.consumed.calories > todaySummary.targets.max_calories ? "bg-red-500" : todaySummary.remaining.calories <= 0 ? "bg-green-500" : "bg-primary"}`}
+                      style={{ width: `${Math.min(100, todaySummary.targets.calories > 0 ? (todaySummary.consumed.calories / todaySummary.targets.calories) * 100 : 0)}%` }}
+                    />
+                  </div>
+                  <p className="text-[10px] text-muted-foreground">{todaySummary.consumed.calories} / {todaySummary.targets.calories} kcal</p>
+                </div>
+                {/* Protein */}
+                <div className="space-y-1.5">
+                  <div className="flex justify-between text-xs">
+                    <span className="text-muted-foreground">{t("protein")}</span>
+                    <span className={`font-semibold ${todaySummary.remaining.protein_g <= 0 ? "text-green-600" : ""}`}>
+                      {todaySummary.remaining.protein_g > 0 ? `${todaySummary.remaining.protein_g}g` : "✓"}
+                    </span>
+                  </div>
+                  <div className="h-2 rounded-full bg-muted overflow-hidden">
+                    <div className={`h-full rounded-full ${todaySummary.remaining.protein_g <= 0 ? "bg-green-500" : "bg-blue-500"}`}
+                      style={{ width: `${Math.min(100, todaySummary.targets.protein_g > 0 ? (todaySummary.consumed.protein_g / todaySummary.targets.protein_g) * 100 : 0)}%` }} />
+                  </div>
+                  <p className="text-[10px] text-muted-foreground">{todaySummary.consumed.protein_g} / {todaySummary.targets.protein_g}g</p>
+                </div>
+                {/* Carbs */}
+                <div className="space-y-1.5">
+                  <div className="flex justify-between text-xs">
+                    <span className="text-muted-foreground">{t("carbs")}</span>
+                    <span className={`font-semibold ${todaySummary.remaining.carbs_g <= 0 ? "text-green-600" : ""}`}>
+                      {todaySummary.remaining.carbs_g > 0 ? `${todaySummary.remaining.carbs_g}g` : "✓"}
+                    </span>
+                  </div>
+                  <div className="h-2 rounded-full bg-muted overflow-hidden">
+                    <div className={`h-full rounded-full ${todaySummary.remaining.carbs_g <= 0 ? "bg-green-500" : "bg-amber-500"}`}
+                      style={{ width: `${Math.min(100, todaySummary.targets.carbs_g > 0 ? (todaySummary.consumed.carbs_g / todaySummary.targets.carbs_g) * 100 : 0)}%` }} />
+                  </div>
+                  <p className="text-[10px] text-muted-foreground">{todaySummary.consumed.carbs_g} / {todaySummary.targets.carbs_g}g</p>
+                </div>
+                {/* Fat */}
+                <div className="space-y-1.5">
+                  <div className="flex justify-between text-xs">
+                    <span className="text-muted-foreground">{t("fat")}</span>
+                    <span className={`font-semibold ${todaySummary.remaining.fat_g <= 0 ? "text-green-600" : ""}`}>
+                      {todaySummary.remaining.fat_g > 0 ? `${todaySummary.remaining.fat_g}g` : "✓"}
+                    </span>
+                  </div>
+                  <div className="h-2 rounded-full bg-muted overflow-hidden">
+                    <div className={`h-full rounded-full ${todaySummary.remaining.fat_g <= 0 ? "bg-green-500" : "bg-rose-500"}`}
+                      style={{ width: `${Math.min(100, todaySummary.targets.fat_g > 0 ? (todaySummary.consumed.fat_g / todaySummary.targets.fat_g) * 100 : 0)}%` }} />
+                  </div>
+                  <p className="text-[10px] text-muted-foreground">{todaySummary.consumed.fat_g} / {todaySummary.targets.fat_g}g</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* ── Streak Banner ── */}
         {streak != null && streak.longest_streak > 0 && (

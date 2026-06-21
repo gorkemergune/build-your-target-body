@@ -3,6 +3,8 @@ import { NextIntlClientProvider } from "next-intl";
 import { getMessages } from "next-intl/server";
 import { ServiceWorkerRegister } from "@/components/pwa/ServiceWorkerRegister";
 import { InstallPrompt } from "@/components/pwa/InstallPrompt";
+import { AnalyticsProvider } from "@/components/analytics/AnalyticsProvider";
+import { ErrorBoundary } from "@/components/analytics/ErrorBoundary";
 import "../globals.css";
 
 export const metadata: Metadata = {
@@ -41,7 +43,11 @@ export default async function LocaleLayout({
     <html lang={locale}>
       <body className="font-sans antialiased">
         <NextIntlClientProvider messages={messages}>
-          {children}
+          <AnalyticsProvider>
+            <ErrorBoundary>
+              {children}
+            </ErrorBoundary>
+          </AnalyticsProvider>
           <ServiceWorkerRegister />
           <InstallPrompt />
         </NextIntlClientProvider>

@@ -11,6 +11,8 @@ from app.models.progress_photo import ProgressPhoto
 from app.models.feedback import Feedback
 from app.models.usage_event import UsageEvent
 from app.models.coach_insight import CoachInsight
+from app.models.error_log import ErrorLog
+from app.models.habit import Habit, HabitLog
 
 __all__ = [
     "User",
@@ -28,4 +30,7 @@ __all__ = [
     "Feedback",
     "UsageEvent",
     "CoachInsight",
+    "ErrorLog",
+    "Habit",
+    "HabitLog",
 ]

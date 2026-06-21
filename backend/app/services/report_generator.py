@@ -2,12 +2,12 @@ from datetime import date, timedelta
 
 from sqlalchemy.orm import Session, joinedload
 
-from app.core.config import settings
 from app.models.body_fat_log import BodyFatLog
 from app.models.goal import Goal
 from app.models.measurement_log import MeasurementLog
 from app.models.nutrition_log import NutritionLog
 from app.models.user import User
+from app.services.gemini_client import call_gemini
 from app.models.weight_log import WeightLog
 from app.models.workout import Workout
 
@@ -450,25 +450,19 @@ def _build_monthly_context(user: User, db: Session) -> str:
     return "\n".join(L)
 
 
-def _call_gemini(prompt: str) -> str:
-    if not settings.GEMINI_API_KEY:
-        return (
-            "## AI Report Unavailable\n\n"
-            "GEMINI_API_KEY is not configured. "
-            "Set it in your .env file to enable AI report generation."
-        )
-    import google.generativeai as genai  # lazy import
-
-    genai.configure(api_key=settings.GEMINI_API_KEY)
-    model = genai.GenerativeModel("gemini-1.5-flash")
-    response = model.generate_content(prompt)
-    return response.text
+_REPORT_FALLBACK = (
+    "## Report Temporarily Unavailable\n\n"
+    "Could not generate this report right now. Please try again in a few minutes.\n\n"
+    "If this keeps happening, make sure GEMINI_API_KEY is configured correctly."
+)
 
 
 async def generate_weekly_report(user: User, db: Session) -> tuple[str, str]:
     context = _build_weekly_context(user, db)
     prompt = _WEEKLY_PROMPT.format(context=context)
-    content = _call_gemini(prompt)
+    content = await call_gemini(
+        prompt, prompt_type="weekly_report", timeout_s=45.0, fallback=_REPORT_FALLBACK
+    )
     today = date.today()
     week_start = today - timedelta(days=7)
     title = f"Weekly Report — {week_start.strftime('%b %d')} to {today.strftime('%b %d, %Y')}"
@@ -478,7 +472,9 @@ async def generate_weekly_report(user: User, db: Session) -> tuple[str, str]:
 async def generate_monthly_report(user: User, db: Session) -> tuple[str, str]:
     context = _build_monthly_context(user, db)
     prompt = _MONTHLY_PROMPT.format(context=context)
-    content = _call_gemini(prompt)
+    content = await call_gemini(
+        prompt, prompt_type="monthly_report", timeout_s=60.0, fallback=_REPORT_FALLBACK
+    )
     today = date.today()
     month_start = today - timedelta(days=30)
     title = f"Monthly Report — {month_start.strftime('%b %d')} to {today.strftime('%b %d, %Y')}"

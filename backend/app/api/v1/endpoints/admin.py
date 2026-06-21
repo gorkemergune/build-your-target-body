@@ -1,3 +1,5 @@
+import asyncio
+import time
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
@@ -15,6 +17,7 @@ from app.models.usage_event import UsageEvent
 from app.models.user import User
 from app.models.weight_log import WeightLog
 from app.models.workout import Workout
+from app.services.gemini_client import GEMINI_MODEL
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -22,6 +25,61 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 def _require_admin(x_admin_key: str | None = Header(None)):
     if not settings.ADMIN_SECRET or x_admin_key != settings.ADMIN_SECRET:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+
+
+@router.get("/gemini-test", dependencies=[Depends(_require_admin)])
+async def gemini_test():
+    """Live probe: verifies key, model, and a real generate_content call."""
+    api_key_present = bool(settings.GEMINI_API_KEY)
+
+    if not api_key_present:
+        return {
+            "api_key": False,
+            "model": GEMINI_MODEL,
+            "success": False,
+            "latency_ms": 0,
+            "error": "GEMINI_API_KEY is not configured",
+        }
+
+    import google.generativeai as genai
+
+    genai.configure(api_key=settings.GEMINI_API_KEY)
+    model = genai.GenerativeModel(GEMINI_MODEL)
+
+    t0 = time.perf_counter()
+    try:
+        loop = asyncio.get_event_loop()
+        response = await asyncio.wait_for(
+            loop.run_in_executor(None, lambda: model.generate_content("Reply with exactly: OK")),
+            timeout=15.0,
+        )
+        latency_ms = round((time.perf_counter() - t0) * 1000)
+        text = response.text.strip()
+        return {
+            "api_key": True,
+            "model": GEMINI_MODEL,
+            "success": True,
+            "latency_ms": latency_ms,
+            "response_preview": text[:60],
+        }
+    except asyncio.TimeoutError:
+        latency_ms = round((time.perf_counter() - t0) * 1000)
+        return {
+            "api_key": True,
+            "model": GEMINI_MODEL,
+            "success": False,
+            "latency_ms": latency_ms,
+            "error": "timeout after 15s",
+        }
+    except Exception as exc:
+        latency_ms = round((time.perf_counter() - t0) * 1000)
+        return {
+            "api_key": True,
+            "model": GEMINI_MODEL,
+            "success": False,
+            "latency_ms": latency_ms,
+            "error": f"{type(exc).__name__}: {str(exc)[:200]}",
+        }
 
 
 @router.get("/stats", dependencies=[Depends(_require_admin)])

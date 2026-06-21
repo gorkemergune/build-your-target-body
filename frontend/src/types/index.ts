@@ -34,6 +34,7 @@ export interface FoodEntry {
   protein_g: number | null;
   carbs_g: number | null;
   fat_g: number | null;
+  food_item_id: number | null;
 }
 
 export interface NutritionLog {
