@@ -19,6 +19,10 @@ GEMINI_MODEL = "gemini-2.5-flash"
 _RATE_LIMIT_MARKERS = ("429", "resource_exhausted", "quota", "rate limit")
 
 
+class GeminiQuotaError(Exception):
+    """Raised when Gemini returns a rate-limit / quota-exceeded error."""
+
+
 def _is_rate_limit(exc: Exception) -> bool:
     msg = str(exc).lower()
     return any(k in msg for k in _RATE_LIMIT_MARKERS)
@@ -30,6 +34,7 @@ async def call_gemini(
     prompt_type: str,
     timeout_s: float = 25.0,
     fallback: str = "",
+    raise_on_rate_limit: bool = False,
 ) -> str:
     """
     Call Gemini and return generated text.
@@ -95,5 +100,7 @@ async def call_gemini(
             str(exc)[:200].replace('"', "'"),
             latency_ms,
         )
+        if rate_limited and raise_on_rate_limit:
+            raise GeminiQuotaError(str(exc)) from exc
 
     return fallback

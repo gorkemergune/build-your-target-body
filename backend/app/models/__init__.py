@@ -22,6 +22,7 @@ from app.models.exercise import Exercise, ExerciseCategory, MuscleGroup
 from app.models.health_sync import HealthSyncLog
 from app.models.wearable import WearableConnection
 from app.models.step_achievement import StepAchievement
+from app.models.user_program import UserProgram, UserProgramDay, UserProgramExercise
 
 __all__ = [
     "User",
@@ -55,4 +56,7 @@ __all__ = [
     "HealthSyncLog",
     "WearableConnection",
     "StepAchievement",
+    "UserProgram",
+    "UserProgramDay",
+    "UserProgramExercise",
 ]

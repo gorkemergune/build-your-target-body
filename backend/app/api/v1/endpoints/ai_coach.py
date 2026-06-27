@@ -13,7 +13,7 @@ from app.models.usage_event import UsageEvent
 from app.models.user import User
 from app.schemas.ai import AiChatRequest, AiChatResponse, AiCoachRequest, AiCoachResponse, GenerateProgramRequest, SmartReminderRequest, WorkoutInsightsRequest
 from app.services.gemini import get_ai_response, get_chat_response
-from app.services.gemini_client import call_gemini
+from app.services.gemini_client import call_gemini, GeminiQuotaError
 
 router = APIRouter(prefix="/ai", tags=["ai"])
 
@@ -197,12 +197,18 @@ async def generate_workout_program(
     current_user: User = Depends(get_current_user),
 ):
     prompt = _build_program_prompt(payload)
-    raw = await call_gemini(prompt, prompt_type="program_gen", timeout_s=60.0, fallback="")
+    try:
+        raw = await call_gemini(prompt, prompt_type="program_gen", timeout_s=60.0, fallback="", raise_on_rate_limit=True)
+    except GeminiQuotaError:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Günlük yapay zeka kotası doldu. Lütfen yarın tekrar deneyin veya Gemini planınızı yükseltin.",
+        )
 
     if not raw:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="AI service is unavailable. Please check GEMINI_API_KEY configuration.",
+            detail="AI servisi şu an kullanılamıyor. GEMINI_API_KEY yapılandırmanızı kontrol edin.",
         )
 
     try:

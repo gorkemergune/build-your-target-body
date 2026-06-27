@@ -425,7 +425,6 @@
     "skip": "Atla",
     "setDone": "Seti tamamla",
     "addFirstExercise": "Başlamak için ilk egzersizini ekle",
-    "addExercise": "Egzersiz Ekle",
     "sessionSummary": "Seans Özeti",
     "sessionDuration": "Süre",
     "sessionVolume": "Toplam Hacim",
@@ -434,7 +433,34 @@
     "repsCompleted": "Toplam Tekrar",
     "saveSession": "Antrenmanı Kaydet",
     "backToSession": "Geri",
-    "confirmAbandon": "Bu antrenmanı iptal et? İlerlemeniz kaybolacak."
+    "confirmAbandon": "Bu antrenmanı iptal et? İlerlemeniz kaybolacak.",
+    "customExercise": "Özel egzersiz olarak ekle",
+    "addCustom": "Özel ekle",
+    "lastPerformance": "Son",
+    "myPrograms": "Programlarım",
+    "createProgram": "Program Oluştur",
+    "programName": "Program Adı",
+    "programDescription": "Açıklama (isteğe bağlı)",
+    "addDay": "Gün Ekle",
+    "dayName": "Gün Adı",
+    "targetSets": "Hedef Set",
+    "targetReps": "Hedef Tekrar",
+    "saveProgram": "Programı Kaydet",
+    "editProgram": "Düzenle",
+    "deleteProgram": "Sil",
+    "startFromProgram": "Canlı Başlat",
+    "logFromProgram": "Antrenman Gir",
+    "noProgramsYet": "Henüz program yok",
+    "noProgramsDesc": "Kendi antrenman programını oluştur ve bir dokunuşla başlat.",
+    "programCreated": "Program oluşturuldu",
+    "programDeleted": "Program silindi",
+    "day": "Gün",
+    "exercises_label": "Egzersiz",
+    "selectDay": "Hangi gün?",
+    "startWorkout": "Başlat",
+    "logWorkoutFromDay": "Antrenman Gir",
+    "confirmDeleteProgram": "Bu programı silmek istediğinize emin misiniz?",
+    "aiQuotaError": "Günlük AI kotası doldu. Lütfen yarın tekrar deneyin."
   },
   "ai": {
     "title": "Yapay Zeka Koç",
@@ -858,6 +884,7 @@
     "expectedOutcomes": "Beklenen Sonuçlar",
     "progressionGuidance": "İlerleme Stratejisi",
     "notes": "Notlar",
-    "progression": "İlerleme"
+    "progression": "İlerleme",
+    "quotaError": "Günlük AI kotası doldu. Yarın tekrar deneyin veya Gemini planınızı yükseltin."
   }
 }

@@ -11,14 +11,43 @@ import { FrequencyChart } from "@/components/charts/FrequencyChart";
 import { StatsBar } from "@/components/tracking/StatsBar";
 import { EmptyState } from "@/components/tracking/EmptyState";
 import { ExercisePickerModal } from "@/components/workouts/ExercisePickerModal";
+import type { PickedExercise } from "@/components/workouts/ExercisePickerModal";
 import { WorkoutSession } from "@/components/workouts/WorkoutSession";
 import { api } from "@/lib/api";
 import { todayISO, localeDateToISO } from "@/lib/utils";
-import type { Exercise, Workout, WorkoutAnalytics, WorkoutType, SetType } from "@/types";
+import type { Workout, WorkoutAnalytics, WorkoutType, SetType } from "@/types";
 import {
   Dumbbell, Plus, Trash2, BookOpen, ChevronDown, ChevronUp,
   Flame, Route, Timer, Heart, Zap, Activity,
+  ListChecks, PenLine, Play, LayoutList, X as XIcon,
 } from "lucide-react";
+
+// ── Program types ─────────────────────────────────────────────────────────────
+
+interface ProgramExercise {
+  id: number;
+  exercise_name: string;
+  exercise_id: number | null;
+  order_index: number;
+  target_sets: number | null;
+  target_reps: string | null;
+  notes: string | null;
+}
+
+interface ProgramDay {
+  id: number;
+  day_number: number;
+  name: string;
+  exercises: ProgramExercise[];
+}
+
+interface UserProgram {
+  id: number;
+  name: string;
+  description: string | null;
+  created_at: string;
+  days: ProgramDay[];
+}
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -117,14 +146,22 @@ export default function WorkoutsPage({ params: { locale } }: { params: { locale:
   const [pickerTarget, setPickerTarget] = useState<string | null>(null);
 
   const [sessionOpen, setSessionOpen] = useState(false);
+  const [sessionInitial, setSessionInitial] = useState<{ exercises: { exercise_name: string; exercise_id: number | null }[]; name: string } | null>(null);
+
+  // My Programs
+  const [programs, setPrograms] = useState<UserProgram[]>([]);
+  const [programsOpen, setProgramsOpen] = useState(false);
+  const [createProgramOpen, setCreateProgramOpen] = useState(false);
+  const [editingProgram, setEditingProgram] = useState<UserProgram | null>(null);
 
   const isCardio = WORKOUT_TYPES.find((t) => t.value === workoutType)?.isCardio ?? false;
 
   const fetchAll = () =>
-    Promise.all([
+    Promise.allSettled([
       api.get("/api/v1/workouts").then((r) => setWorkouts(r.data)),
       api.get("/api/v1/analytics/workout-analytics").then((r) => setAnalytics(r.data)),
       api.get("/api/v1/analytics/workout-frequency?days=30").then((r) => setFreqData(r.data)),
+      api.get("/api/v1/user-programs").then((r) => setPrograms(r.data)),
     ]);
 
   useEffect(() => { fetchAll(); }, []);
@@ -185,7 +222,7 @@ export default function WorkoutsPage({ params: { locale } }: { params: { locale:
     setPickerOpen(true);
   }
 
-  function handlePickerSelect(ex: Exercise) {
+  function handlePickerSelect(ex: PickedExercise) {
     if (pickerTarget === null) {
       setExercises((p) => [...p, { ...emptyExercise(), exercise_name: ex.name, exercise_id: ex.id }]);
     } else {
@@ -193,6 +230,36 @@ export default function WorkoutsPage({ params: { locale } }: { params: { locale:
     }
     setPickerOpen(false);
     setPickerTarget(null);
+  }
+
+  // ── Programs helpers ──
+
+  async function deleteProgram(id: number) {
+    if (!confirm(t("confirmDeleteProgram"))) return;
+    await api.delete(`/api/v1/user-programs/${id}`);
+    setPrograms((p) => p.filter((pr) => pr.id !== id));
+  }
+
+  function startFromDay(program: UserProgram, day: ProgramDay) {
+    setSessionInitial({
+      name: `${program.name} — ${day.name}`,
+      exercises: day.exercises.map((e) => ({ exercise_name: e.exercise_name, exercise_id: e.exercise_id })),
+    });
+    setSessionOpen(true);
+  }
+
+  function logFromDay(program: UserProgram, day: ProgramDay) {
+    setName(`${program.name} — ${day.name}`);
+    setExercises(day.exercises.map((e) => ({
+      uid: uid(),
+      exercise_name: e.exercise_name,
+      exercise_id: e.exercise_id,
+      notes: e.notes ?? "",
+      sets: [emptySet()],
+      collapsed: false,
+    })));
+    // Scroll to the log form
+    document.getElementById("log-form-anchor")?.scrollIntoView({ behavior: "smooth" });
   }
 
   // ── Submit ──
@@ -274,6 +341,61 @@ export default function WorkoutsPage({ params: { locale } }: { params: { locale:
           <CardContent><FrequencyChart data={freqData} /></CardContent>
         </Card>
 
+        {/* ── My Programs ── */}
+        <Card>
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base flex items-center gap-2">
+                <LayoutList className="h-5 w-5 text-primary" />
+                {t("myPrograms")}
+              </CardTitle>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => { setEditingProgram(null); setCreateProgramOpen(true); }}
+                >
+                  <Plus className="h-4 w-4 mr-1" />
+                  {t("createProgram")}
+                </Button>
+                {programs.length > 0 && (
+                  <button
+                    onClick={() => setProgramsOpen((p) => !p)}
+                    className="p-1.5 rounded-md hover:bg-muted"
+                  >
+                    {programsOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                  </button>
+                )}
+              </div>
+            </div>
+          </CardHeader>
+          {(programsOpen || programs.length === 0) && (
+            <CardContent>
+              {programs.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-6 text-muted-foreground gap-2">
+                  <ListChecks className="h-8 w-8 opacity-30" />
+                  <p className="text-sm font-medium">{t("noProgramsYet")}</p>
+                  <p className="text-xs text-center">{t("noProgramsDesc")}</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {programs.map((prog) => (
+                    <ProgramCard
+                      key={prog.id}
+                      program={prog}
+                      t={t}
+                      onStartDay={(day) => startFromDay(prog, day)}
+                      onLogDay={(day) => logFromDay(prog, day)}
+                      onEdit={() => { setEditingProgram(prog); setCreateProgramOpen(true); }}
+                      onDelete={() => deleteProgram(prog.id)}
+                    />
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          )}
+        </Card>
+
         {/* ── Live Workout Mode ── */}
         <Card className="border-primary/30 bg-primary/5">
           <CardContent className="py-5">
@@ -285,7 +407,7 @@ export default function WorkoutsPage({ params: { locale } }: { params: { locale:
                 </h2>
                 <p className="text-sm text-muted-foreground mt-0.5">{t("startLiveWorkoutDesc")}</p>
               </div>
-              <Button onClick={() => setSessionOpen(true)} className="shrink-0">
+              <Button onClick={() => { setSessionInitial(null); setSessionOpen(true); }} className="shrink-0">
                 {t("startNow")}
               </Button>
             </div>
@@ -293,6 +415,7 @@ export default function WorkoutsPage({ params: { locale } }: { params: { locale:
         </Card>
 
         {/* ── Log Form ── */}
+        <div id="log-form-anchor" />
         <Card>
           <CardHeader><CardTitle>{t("logWorkout")}</CardTitle></CardHeader>
           <CardContent>
@@ -438,11 +561,365 @@ export default function WorkoutsPage({ params: { locale } }: { params: { locale:
       {sessionOpen && (
         <WorkoutSession
           locale={locale}
-          onClose={() => setSessionOpen(false)}
-          onSaved={() => { setSessionOpen(false); fetchAll(); }}
+          onClose={() => { setSessionOpen(false); setSessionInitial(null); }}
+          onSaved={() => { setSessionOpen(false); setSessionInitial(null); fetchAll(); }}
+          initialExercises={sessionInitial?.exercises}
+          initialName={sessionInitial?.name}
+        />
+      )}
+
+      {createProgramOpen && (
+        <ProgramFormModal
+          locale={locale}
+          program={editingProgram}
+          t={t}
+          onClose={() => { setCreateProgramOpen(false); setEditingProgram(null); }}
+          onSaved={(prog) => {
+            setPrograms((p) => {
+              const idx = p.findIndex((x) => x.id === prog.id);
+              if (idx >= 0) { const next = [...p]; next[idx] = prog; return next; }
+              return [prog, ...p];
+            });
+            setCreateProgramOpen(false);
+            setEditingProgram(null);
+            setProgramsOpen(true);
+          }}
         />
       )}
     </AppLayout>
+  );
+}
+
+// ── Program Card ──────────────────────────────────────────────────────────────
+
+function ProgramCard({
+  program, t, onStartDay, onLogDay, onEdit, onDelete,
+}: {
+  program: UserProgram;
+  t: ReturnType<typeof useTranslations<"workouts">>;
+  onStartDay: (day: ProgramDay) => void;
+  onLogDay: (day: ProgramDay) => void;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [selectedDay, setSelectedDay] = useState(0);
+
+  const day = program.days[selectedDay];
+
+  return (
+    <div className="rounded-lg border bg-card overflow-hidden">
+      <div className="flex items-center gap-3 px-4 py-3 bg-muted/20">
+        <LayoutList className="h-4 w-4 text-primary shrink-0" />
+        <div className="flex-1 min-w-0">
+          <p className="font-semibold text-sm truncate">{program.name}</p>
+          {program.description && (
+            <p className="text-xs text-muted-foreground truncate">{program.description}</p>
+          )}
+        </div>
+        <span className="text-xs text-muted-foreground shrink-0">
+          {program.days.length} {t("day")}
+        </span>
+        <button onClick={onEdit} className="p-1 rounded hover:bg-muted text-muted-foreground">
+          <PenLine className="h-3.5 w-3.5" />
+        </button>
+        <button onClick={onDelete} className="p-1 rounded hover:bg-muted text-destructive">
+          <Trash2 className="h-3.5 w-3.5" />
+        </button>
+        <button onClick={() => setExpanded((p) => !p)} className="p-1 rounded hover:bg-muted">
+          {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+        </button>
+      </div>
+
+      {expanded && program.days.length > 0 && (
+        <div className="px-4 pb-4 pt-2 space-y-3">
+          {/* Day selector */}
+          <div className="flex gap-1.5 overflow-x-auto scrollbar-none">
+            {program.days.map((d, i) => (
+              <button
+                key={d.id}
+                onClick={() => setSelectedDay(i)}
+                className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${
+                  selectedDay === i
+                    ? "border-primary bg-primary text-primary-foreground"
+                    : "border-border bg-muted/30 hover:bg-muted/60 text-muted-foreground"
+                }`}
+              >
+                {d.name}
+              </button>
+            ))}
+          </div>
+
+          {/* Day exercises */}
+          {day && (
+            <>
+              <div className="space-y-1">
+                {day.exercises.map((ex, i) => (
+                  <div key={ex.id} className="flex items-center gap-2 py-1 text-sm">
+                    <span className="w-5 text-xs text-muted-foreground font-bold shrink-0">{i + 1}</span>
+                    <span className="flex-1 font-medium truncate">{ex.exercise_name}</span>
+                    {(ex.target_sets || ex.target_reps) && (
+                      <span className="text-xs text-muted-foreground shrink-0">
+                        {ex.target_sets && `${ex.target_sets}×`}{ex.target_reps}
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex gap-2 pt-1">
+                <Button
+                  size="sm"
+                  onClick={() => onStartDay(day)}
+                  className="flex-1 gap-1.5"
+                >
+                  <Play className="h-3.5 w-3.5" />
+                  {t("startFromProgram")}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => onLogDay(day)}
+                  className="flex-1 gap-1.5"
+                >
+                  <PenLine className="h-3.5 w-3.5" />
+                  {t("logFromProgram")}
+                </Button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Program Form Modal ────────────────────────────────────────────────────────
+
+function ProgramFormModal({
+  locale, program, t, onClose, onSaved,
+}: {
+  locale: string;
+  program: UserProgram | null;
+  t: ReturnType<typeof useTranslations<"workouts">>;
+  onClose: () => void;
+  onSaved: (prog: UserProgram) => void;
+}) {
+  const isEdit = !!program;
+  const [name, setName] = useState(program?.name ?? "");
+  const [description, setDescription] = useState(program?.description ?? "");
+  const [days, setDays] = useState<{ day_number: number; name: string; exercises: { exercise_name: string; exercise_id: number | null; order_index: number; target_sets: string; target_reps: string }[] }[]>(
+    program?.days.map((d) => ({
+      day_number: d.day_number,
+      name: d.name,
+      exercises: d.exercises.map((e) => ({
+        exercise_name: e.exercise_name,
+        exercise_id: e.exercise_id,
+        order_index: e.order_index,
+        target_sets: e.target_sets ? String(e.target_sets) : "",
+        target_reps: e.target_reps ?? "",
+      })),
+    })) ?? []
+  );
+  const [saving, setSaving] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerDayIdx, setPickerDayIdx] = useState<number | null>(null);
+
+  function addDay() {
+    setDays((p) => [...p, { day_number: p.length + 1, name: `${t("day")} ${p.length + 1}`, exercises: [] }]);
+  }
+
+  function removeDay(i: number) {
+    setDays((p) => p.filter((_, idx) => idx !== i).map((d, idx) => ({ ...d, day_number: idx + 1 })));
+  }
+
+  function addExToDay(dayIdx: number, ex: PickedExercise) {
+    setDays((p) => p.map((d, i) =>
+      i !== dayIdx ? d : {
+        ...d,
+        exercises: [...d.exercises, {
+          exercise_name: ex.name,
+          exercise_id: ex.id,
+          order_index: d.exercises.length,
+          target_sets: "",
+          target_reps: "",
+        }],
+      }
+    ));
+  }
+
+  function removeExFromDay(dayIdx: number, exIdx: number) {
+    setDays((p) => p.map((d, i) =>
+      i !== dayIdx ? d : {
+        ...d,
+        exercises: d.exercises.filter((_, ei) => ei !== exIdx).map((e, ei) => ({ ...e, order_index: ei })),
+      }
+    ));
+  }
+
+  function updateDayEx(dayIdx: number, exIdx: number, patch: { target_sets?: string; target_reps?: string }) {
+    setDays((p) => p.map((d, i) =>
+      i !== dayIdx ? d : {
+        ...d,
+        exercises: d.exercises.map((e, ei) => ei === exIdx ? { ...e, ...patch } : e),
+      }
+    ));
+  }
+
+  async function handleSave() {
+    if (!name.trim() || days.length === 0) return;
+    setSaving(true);
+    try {
+      const payload = {
+        name: name.trim(),
+        description: description.trim() || undefined,
+        days: days.map((d) => ({
+          day_number: d.day_number,
+          name: d.name,
+          exercises: d.exercises.map((e) => ({
+            exercise_name: e.exercise_name,
+            exercise_id: e.exercise_id,
+            order_index: e.order_index,
+            target_sets: e.target_sets ? parseInt(e.target_sets) : undefined,
+            target_reps: e.target_reps || undefined,
+          })),
+        })),
+      };
+      let res;
+      if (isEdit) {
+        res = await api.put(`/api/v1/user-programs/${program!.id}`, payload);
+      } else {
+        res = await api.post("/api/v1/user-programs", payload);
+      }
+      onSaved(res.data);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 p-0 sm:p-4">
+      <div className="relative bg-background w-full sm:max-w-2xl sm:rounded-xl shadow-2xl flex flex-col max-h-[92dvh] sm:max-h-[85vh]">
+        {/* Header */}
+        <div className="flex items-center gap-3 p-4 border-b shrink-0">
+          <LayoutList className="h-5 w-5 text-primary" />
+          <span className="font-semibold text-base flex-1">
+            {isEdit ? t("editProgram") : t("createProgram")}
+          </span>
+          <button onClick={onClose} className="p-1.5 rounded hover:bg-muted">
+            <XIcon className="h-4 w-4" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+          <div className="space-y-1.5">
+            <Label>{t("programName")}</Label>
+            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={t("programName")} />
+          </div>
+          <div className="space-y-1.5">
+            <Label>{t("programDescription")}</Label>
+            <Input value={description} onChange={(e) => setDescription(e.target.value)} placeholder={t("programDescription")} />
+          </div>
+
+          {/* Days */}
+          <div className="space-y-3">
+            {days.map((d, dayIdx) => (
+              <div key={dayIdx} className="rounded-lg border bg-muted/20 overflow-hidden">
+                <div className="flex items-center gap-2 px-3 py-2 bg-muted/40">
+                  <span className="text-xs font-bold text-muted-foreground w-5">{dayIdx + 1}</span>
+                  <Input
+                    value={d.name}
+                    onChange={(e) => setDays((p) => p.map((x, i) => i === dayIdx ? { ...x, name: e.target.value } : x))}
+                    className="h-7 text-sm font-medium flex-1"
+                    placeholder={t("dayName")}
+                  />
+                  <button
+                    onClick={() => removeDay(dayIdx)}
+                    className="p-1 rounded hover:bg-muted text-destructive"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+
+                <div className="px-3 pb-3 pt-1 space-y-1.5">
+                  {d.exercises.map((ex, exIdx) => (
+                    <div key={exIdx} className="flex items-center gap-2">
+                      <span className="text-xs text-muted-foreground w-4 shrink-0">{exIdx + 1}</span>
+                      <span className="flex-1 text-sm truncate font-medium">{ex.exercise_name}</span>
+                      <Input
+                        type="number"
+                        min="1"
+                        max="20"
+                        placeholder={t("targetSets")}
+                        value={ex.target_sets}
+                        onChange={(e) => updateDayEx(dayIdx, exIdx, { target_sets: e.target.value })}
+                        className="h-7 w-14 text-xs px-1.5"
+                        title={t("targetSets")}
+                      />
+                      <span className="text-xs text-muted-foreground">×</span>
+                      <Input
+                        placeholder={t("targetReps")}
+                        value={ex.target_reps}
+                        onChange={(e) => updateDayEx(dayIdx, exIdx, { target_reps: e.target.value })}
+                        className="h-7 w-16 text-xs px-1.5"
+                        title={t("targetReps")}
+                      />
+                      <button
+                        onClick={() => removeExFromDay(dayIdx, exIdx)}
+                        className="p-0.5 rounded hover:bg-muted text-destructive"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </button>
+                    </div>
+                  ))}
+
+                  <button
+                    onClick={() => { setPickerDayIdx(dayIdx); setPickerOpen(true); }}
+                    className="flex items-center gap-1.5 text-xs text-primary hover:underline mt-1"
+                  >
+                    <Plus className="h-3 w-3" />
+                    {t("addExercise")}
+                  </button>
+                </div>
+              </div>
+            ))}
+
+            <button
+              onClick={addDay}
+              className="w-full py-2.5 rounded-lg border-2 border-dashed border-border hover:border-primary hover:text-primary transition-colors text-sm text-muted-foreground flex items-center justify-center gap-2"
+            >
+              <Plus className="h-4 w-4" />
+              {t("addDay")}
+            </button>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="px-4 pb-4 pt-2 border-t shrink-0 flex gap-3">
+          <Button variant="outline" onClick={onClose} className="flex-1">{t("backToSession")}</Button>
+          <Button
+            onClick={handleSave}
+            disabled={saving || !name.trim() || days.length === 0}
+            className="flex-1"
+          >
+            {saving ? "..." : t("saveProgram")}
+          </Button>
+        </div>
+      </div>
+
+      {pickerOpen && pickerDayIdx !== null && (
+        <ExercisePickerModal
+          locale={locale}
+          onSelect={(ex) => {
+            addExToDay(pickerDayIdx, ex);
+            setPickerOpen(false);
+            setPickerDayIdx(null);
+          }}
+          onClose={() => { setPickerOpen(false); setPickerDayIdx(null); }}
+        />
+      )}
+    </div>
   );
 }
 

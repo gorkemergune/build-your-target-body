@@ -2,15 +2,36 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
-import { X, Search, Dumbbell } from "lucide-react";
+import { X, Search, Dumbbell, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api";
-import type { Exercise, ExerciseCategory, MuscleGroup } from "@/types";
+import type { ExerciseCategory, MuscleGroup } from "@/types";
+
+// Minimal shape needed by callers
+export interface PickedExercise {
+  name: string;
+  id: number | null;
+}
+
+interface Exercise {
+  id: number;
+  name: string;
+  difficulty: string;
+  equipment: string;
+  primary_muscle: { name: string; name_tr: string };
+  secondary_muscles: string[];
+}
+
+interface LastPerf {
+  weight_kg: number | null;
+  reps: number | null;
+  last_date: string;
+}
 
 interface Props {
   locale: string;
-  onSelect: (exercise: Exercise) => void;
+  onSelect: (exercise: PickedExercise) => void;
   onClose: () => void;
 }
 
@@ -28,6 +49,8 @@ export function ExercisePickerModal({ locale, onSelect, onClose }: Props) {
   const [muscleGroups, setMuscleGroups] = useState<MuscleGroup[]>([]);
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [loading, setLoading] = useState(false);
+  // Map of exercise_id → last performance
+  const [perfMap, setPerfMap] = useState<Record<string, LastPerf>>({});
 
   const [query, setQuery] = useState("");
   const [categoryId, setCategoryId] = useState<number | null>(null);
@@ -39,9 +62,13 @@ export function ExercisePickerModal({ locale, onSelect, onClose }: Props) {
     Promise.all([
       api.get("/api/v1/exercises/categories"),
       api.get("/api/v1/exercises/muscle-groups"),
-    ]).then(([catRes, mgRes]) => {
+      api.get("/api/v1/workouts/exercised-summary"),
+    ]).then(([catRes, mgRes, perfRes]) => {
       setCategories(catRes.data);
       setMuscleGroups(mgRes.data);
+      setPerfMap(perfRes.data ?? {});
+    }).catch(() => {
+      // perfMap stays empty if the request fails — UI degrades gracefully
     });
     fetchExercises("", null, null);
   }, []);
@@ -76,6 +103,14 @@ export function ExercisePickerModal({ locale, onSelect, onClose }: Props) {
     setMuscleId(id);
     fetchExercises(query, categoryId, id);
   }
+
+  function handleAddCustom() {
+    if (!query.trim()) return;
+    onSelect({ name: query.trim(), id: null });
+  }
+
+  const trimmedQuery = query.trim();
+  const showCustomOption = trimmedQuery.length > 0;
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 p-0 sm:p-4">
@@ -166,51 +201,79 @@ export function ExercisePickerModal({ locale, onSelect, onClose }: Props) {
             <div className="flex items-center justify-center py-12 text-muted-foreground text-sm">
               {t("loading")}
             </div>
-          ) : exercises.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12 text-muted-foreground text-sm gap-2">
-              <Dumbbell className="h-8 w-8 opacity-30" />
-              <span>{t("noExercisesFound")}</span>
-            </div>
           ) : (
             <div className="divide-y">
-              {exercises.map((ex) => (
+              {/* Custom exercise option when searching */}
+              {showCustomOption && (
                 <button
-                  key={ex.id}
-                  onClick={() => onSelect(ex)}
-                  className="w-full text-left px-4 py-3 hover:bg-muted/50 transition-colors"
+                  onClick={handleAddCustom}
+                  className="w-full text-left px-4 py-3 hover:bg-primary/5 transition-colors flex items-center gap-3 border-b border-dashed border-primary/30"
                 >
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <p className="font-medium text-sm leading-tight">
-                        {ex.name}
-                      </p>
-                      <div className="flex flex-wrap gap-1 mt-1">
-                        <span className="text-xs px-1.5 py-0.5 rounded bg-primary/10 text-primary">
-                          {isTr ? ex.primary_muscle.name_tr : ex.primary_muscle.name}
-                        </span>
-                        {ex.secondary_muscles.slice(0, 2).map((m) => (
-                          <span
-                            key={m}
-                            className="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground"
-                          >
-                            {m}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                    <div className="flex flex-col items-end gap-1 shrink-0">
-                      <span
-                        className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${
-                          DIFFICULTY_COLORS[ex.difficulty] ?? ""
-                        }`}
-                      >
-                        {t(`difficulty_${ex.difficulty}`)}
-                      </span>
-                      <span className="text-xs text-muted-foreground capitalize">{ex.equipment}</span>
-                    </div>
+                  <div className="h-7 w-7 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                    <Plus className="h-4 w-4 text-primary" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="font-medium text-sm text-primary">
+                      &ldquo;{trimmedQuery}&rdquo; — {t("addCustom")}
+                    </p>
+                    <p className="text-xs text-muted-foreground">{t("customExercise")}</p>
                   </div>
                 </button>
-              ))}
+              )}
+
+              {exercises.length === 0 && !showCustomOption && (
+                <div className="flex flex-col items-center justify-center py-12 text-muted-foreground text-sm gap-2">
+                  <Dumbbell className="h-8 w-8 opacity-30" />
+                  <span>{t("noExercisesFound")}</span>
+                </div>
+              )}
+
+              {exercises.map((ex) => {
+                const perf = perfMap[String(ex.id)];
+                return (
+                  <button
+                    key={ex.id}
+                    onClick={() => onSelect({ name: ex.name, id: ex.id })}
+                    className="w-full text-left px-4 py-3 hover:bg-muted/50 transition-colors"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="font-medium text-sm leading-tight">
+                          {ex.name}
+                        </p>
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          <span className="text-xs px-1.5 py-0.5 rounded bg-primary/10 text-primary">
+                            {isTr ? ex.primary_muscle.name_tr : ex.primary_muscle.name}
+                          </span>
+                          {ex.secondary_muscles.slice(0, 2).map((m) => (
+                            <span
+                              key={m}
+                              className="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground"
+                            >
+                              {m}
+                            </span>
+                          ))}
+                          {perf && (
+                            <span className="text-xs px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 font-medium">
+                              {t("lastPerformance")}: {perf.weight_kg}kg × {perf.reps}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex flex-col items-end gap-1 shrink-0">
+                        <span
+                          className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${
+                            DIFFICULTY_COLORS[ex.difficulty] ?? ""
+                          }`}
+                        >
+                          {t(`difficulty_${ex.difficulty}`)}
+                        </span>
+                        <span className="text-xs text-muted-foreground capitalize">{ex.equipment}</span>
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           )}
         </div>

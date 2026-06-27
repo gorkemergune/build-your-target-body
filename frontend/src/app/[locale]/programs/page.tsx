@@ -111,7 +111,11 @@ export default function ProgramsPage({ params: { locale } }: { params: { locale:
       setProgram(res.data);
       setActiveDay(0);
     } catch (e: any) {
-      setError(e?.response?.data?.detail || t("generateError"));
+      if (e?.response?.status === 429) {
+        setError(t("quotaError"));
+      } else {
+        setError(e?.response?.data?.detail || t("generateError"));
+      }
     } finally {
       setLoading(false);
     }

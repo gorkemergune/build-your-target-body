@@ -369,6 +369,42 @@ def list_workouts(
     )
 
 
+@router.get("/workouts/exercised-summary")
+def exercised_summary(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Return last working-set performance for every catalog exercise the user has done."""
+    from sqlalchemy import text
+    rows = db.execute(
+        text("""
+            SELECT DISTINCT ON (we.exercise_id)
+                we.exercise_id,
+                ws.weight_kg,
+                ws.reps,
+                w.logged_at::date AS last_date
+            FROM workout_exercises we
+            JOIN workouts w ON w.id = we.workout_id
+            JOIN workout_sets ws ON ws.workout_exercise_id = we.id
+            WHERE w.user_id = :uid
+              AND we.exercise_id IS NOT NULL
+              AND ws.set_type = 'working'
+              AND ws.weight_kg IS NOT NULL
+              AND ws.reps IS NOT NULL
+            ORDER BY we.exercise_id, w.logged_at DESC, ws.set_number DESC
+        """),
+        {"uid": current_user.id},
+    ).fetchall()
+    return {
+        str(r.exercise_id): {
+            "weight_kg": r.weight_kg,
+            "reps": r.reps,
+            "last_date": str(r.last_date),
+        }
+        for r in rows
+    }
+
+
 @router.get("/workouts/{workout_id}", response_model=WorkoutResponse)
 def get_workout(
     workout_id: int,

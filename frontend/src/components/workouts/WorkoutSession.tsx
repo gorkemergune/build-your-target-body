@@ -9,8 +9,9 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ExercisePickerModal } from "@/components/workouts/ExercisePickerModal";
+import type { PickedExercise } from "@/components/workouts/ExercisePickerModal";
 import { api } from "@/lib/api";
-import type { Exercise, SetType, WorkoutType } from "@/types";
+import type { SetType, WorkoutType } from "@/types";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -84,17 +85,21 @@ interface Props {
   locale: string;
   onClose: () => void;
   onSaved: () => void;
+  initialExercises?: { exercise_name: string; exercise_id: number | null }[];
+  initialName?: string;
 }
 
-export function WorkoutSession({ locale, onClose, onSaved }: Props) {
+export function WorkoutSession({ locale, onClose, onSaved, initialExercises, initialName }: Props) {
   const t = useTranslations("workouts");
 
   const [phase, setPhase] = useState<"session" | "summary">("session");
-  const [workoutName, setWorkoutName] = useState("My Workout");
+  const [workoutName, setWorkoutName] = useState(initialName ?? "My Workout");
   const [workoutType, setWorkoutType] = useState<WorkoutType>("strength");
   const [restDuration, setRestDuration] = useState(90);
   const [restEnabled, setRestEnabled] = useState(true);
-  const [exercises, setExercises] = useState<LiveExercise[]>([]);
+  const [exercises, setExercises] = useState<LiveExercise[]>(
+    initialExercises?.map((e) => emptyExercise(e.exercise_name, e.exercise_id)) ?? []
+  );
 
   // Timers
   const elapsedRef = useRef(0);
@@ -199,7 +204,7 @@ export function WorkoutSession({ locale, onClose, onSaved }: Props) {
 
   // ── Exercise picker ──
 
-  function handlePickerSelect(ex: Exercise) {
+  function handlePickerSelect(ex: PickedExercise) {
     addExercise(ex.name, ex.id);
     setPickerOpen(false);
   }
